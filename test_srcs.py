@@ -2,18 +2,22 @@ import numpy as np
 import pydtmc
 import matplotlib.pyplot as plt 
 import os 
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense
 # generate the transition matrix
 max_num_nodes = 2**(8)
 q = 0.2
 p = (1-q)/2
-jumps= 50
+jumps= 5
 min_active_nodes = 10
+num_runs = 2
+num_iters = 5000
+split = 0.9
+length_of_trial = 50
+tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
 states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
 # eps = 0.1
 # length_of_trial = int(65/((1-0.04**eps)**2))
-length_of_trial = 100
 print(f"Length of trial is l={length_of_trial:.2f}")
 
 def gen_transition_matrix(n, p, q):
@@ -82,7 +86,7 @@ def est_lottery_frame(trial_arr):
             break
     return int(1.2897*(2**(R)))
 def normalize_feature_vec(bm, nhat, bnb_estimate):
-    bm = np.array(bm)/max_num_nodes*2
+    bm = np.array(bm)/(max_num_nodes/len(bm))
     feature_vec = np.array(list(bm)+[nhat/max_num_nodes, bnb_estimate/max_num_nodes])
     # feature_vec = np.array(list(bm))
     return feature_vec
@@ -91,13 +95,10 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
     # first run LoF to get started 
     # LoF with l = log2(max_num_nodes) slots
     perf = np.zeros((1,3))
-    curr_state = 124
+    curr_state = 120
     steps = mc.simulate(num_iters, curr_state, seed=seed)
     for i in range(num_iters):
         n_truth = int(steps[i])
-        print("-"*10)
-        print(f"Step {i}")
-        print(f"True n={n_truth}")
         n_truth_prev = int(steps[i-1])
         if(i==0):
             # Run Lottery Frame
@@ -114,10 +115,8 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
         else:
             p_participate=1
         # Run balls-and-bins for current slot
-        bnb_bm = sim_balls_and_bins(n_truth, p_participate, l)
+        bnb_bm = sim_balls_and_bins(n_truth, p_participate, l, seed=i)
         bnb_estimate = est_balls_and_bins(bnb_bm, p_participate)
-        print("Balls and Bins")
-        print(f"bnb_estimate = {bnb_estimate}")
         # train NN with bnb_bm, nhat, l, n_bnb to predict n_truth
         feature_vec = normalize_feature_vec(bnb_bm, nhat, bnb_estimate)
         X = feature_vec
@@ -125,6 +124,13 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
         X = X.reshape(1, len(X))
         y = y.reshape(1, len(y))
         # print(feature_vec)
+        if(i==500):
+            print(f"Feature vec for n={n_truth} is {X}, target is {y}")
+            X_500 = X
+            y_500 = y
+        if(i%100==0 and i>500):
+            n_500 = model.predict(X_500, verbose=-1)
+            print(f"at {i}, Prediction = {n_500[0][0]:.2f}, Actual = {y_500}")
         n_prediction = (model.predict(X, verbose=-1))*max_num_nodes
         if(n_truth):
             perf[0,0] = (n_prediction-n_truth)/n_truth
@@ -138,9 +144,10 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
         np.savetxt(f, perf, delimiter=',')
         # f.write("\n")
         f.close()
-        print(f" Actual : {n_truth}, Predicted by NN : {n_prediction}")
+        print(f"Step {i} Actual : {n_truth}, Predicted : {n_prediction[0][0]:.2f}", end='\r')
         if(i<num_iters*split):                
             model.fit(X,y,verbose=-1)
+    model.save(f"./models/model_{tag}")
     return 0
 
 tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
@@ -153,34 +160,37 @@ model.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activati
 model.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
 model.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
 model.add(Dense(1, activation='linear'))
-model.compile(loss='mean_squared_error')
+model.compile(loss='mean_squared_error', optimizer='SGD')
 model.summary()
 
-num_iters = 30000
-split = 0.8
-split_iter = int(num_iters*split)
-tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
 
-if(os.path.exists(f"./data/sim_{tag}.csv")):
-    os.remove(f"./data/sim_{tag}.csv")
-run_sim(mc, num_iters, length_of_trial, 8, model, split, tag, 0)
-ret = np.genfromtxt(f"./data/sim_{tag}.csv", delimiter=',')
-print(ret.shape)
-plt.figure(0)
-avg_error = np.mean((ret[split_iter:,:2]), axis=0)
-std_error = np.std((ret[split_iter:,:2]), axis=0)
-plt.plot(ret[:,0], label=f"NN, mean={avg_error[0]:.1g}, stddev={std_error[0]:.1g}", linewidth=0.6)
-plt.plot(ret[:,1], label=f"BnB, mean={avg_error[1]:.1g}, stddev={std_error[1]:.1g}", alpha=0.9, linewidth=0.6)
-plt.axvline(split_iter, label="Split", linestyle='dashed', color='red')
-plt.legend()
-plt.grid()
-# plt.ylim(-0.5, 0.5)
-plt.xlabel("Timeslots")
-plt.ylabel("Relative error")
-plt.savefig(f"./plots/sim_{tag}.png")
-plt.figure(1)
-plt.grid()
-plt.plot(ret[:,2])
-plt.xlabel("Timeslots")
-plt.ylabel("Number of active nodes")
-plt.savefig(f"./plots/truth_{tag}.png")
+split_iter = int(num_iters*split)
+
+for i in range(num_runs):
+    ctag = tag+f"_r{i}"
+    if(os.path.exists(f"./data/sim_{ctag}.csv")):
+        os.remove(f"./data/sim_{ctag}.csv")
+    if(i):
+        model = load_model(f"./models/model_{tag}_r{i-1}")
+        print(f"Loaded ./models/model_{tag}_r{i-1}")
+    run_sim(mc, num_iters, length_of_trial, 8, model, split, ctag, i)
+    ret = np.genfromtxt(f"./data/sim_{ctag}.csv", delimiter=',')
+    print(ret.shape)
+    plt.figure()
+    avg_error = np.mean((ret[split_iter:,:2]), axis=0)
+    std_error = np.std((ret[split_iter:,:2]), axis=0)
+    plt.plot(ret[:,0], label=f"NN, mean={avg_error[0]:.1g}, stddev={std_error[0]:.1g}", linewidth=0.6)
+    plt.plot(ret[:,1], label=f"BnB, mean={avg_error[1]:.1g}, stddev={std_error[1]:.1g}", alpha=0.9, linewidth=0.6)
+    plt.axvline(split_iter, label="Split", linestyle='dashed', color='red')
+    plt.legend()
+    plt.grid()
+    # plt.ylim(-0.5, 0.5)
+    plt.xlabel("Timeslots")
+    plt.ylabel("Relative error")
+    plt.savefig(f"./plots/sim_{ctag}.png")
+    plt.figure()
+    plt.grid()
+    plt.plot(ret[:,2])
+    plt.xlabel("Timeslots")
+    plt.ylabel("Number of active nodes")
+    plt.savefig(f"./plots/truth_{ctag}.png")
