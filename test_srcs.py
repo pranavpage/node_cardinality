@@ -2,24 +2,22 @@ import numpy as np
 import pydtmc
 import matplotlib.pyplot as plt 
 import os 
+import csv
+import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Layer, Lambda, InputLayer
+from tensorflow.keras.metrics import mean_squared_error as mse 
+from tensorflow.keras import Model
+from tensorflow.keras.losses import MeanSquaredError
 # generate the transition matrix
-max_num_nodes = 2**(8)
-q = 0.2
-p = (1-q)/2
-jumps= 5
-min_active_nodes = 10
-num_runs = 2
-num_iters = 5000
-split = 0.9
-length_of_trial = 50
-tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
-states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
-# eps = 0.1
-# length_of_trial = int(65/((1-0.04**eps)**2))
-print(f"Length of trial is l={length_of_trial:.2f}")
 
+def split_data(data, feature_vec_length=feature_vec_length):
+    x = data
+    x_student = x[:, :feature_vec_length]
+    temp = tf.reshape(x[:, feature_vec_length], [-1, 1])
+    x_teacher = tf.concat([x[:, :feature_vec_length-1], temp], 1)
+    print(f"Student={x_student}, Teacher={x_teacher}")
+    return x_student, x_teacher
 def gen_transition_matrix(n, p, q):
     # generate TPM for n states
     tpm = []
@@ -37,6 +35,97 @@ def gen_transition_matrix(n, p, q):
             row[i+1] = p
         tpm.append(row)
     return tpm
+class Distiller(Model):
+    def __init__(self, student, teacher):
+        super().__init__()
+        self.teacher = teacher
+        self.student = student
+
+    def compile(
+        self,
+        optimizer,
+        student_loss_fn,
+        distillation_loss_fn,
+        alpha=0.1,
+        temperature=1,
+    ):
+        """ Configure the distiller.
+
+        Args:
+            optimizer: Keras optimizer for the student weights
+            metrics: Keras metrics for evaluation
+            student_loss_fn: Loss function of difference between student
+                predictions and ground-truth
+            distillation_loss_fn: Loss function of difference between soft
+                student predictions and soft teacher predictions
+            alpha: weight to student_loss_fn and 1-alpha to distillation_loss_fn
+            temperature: Temperature for softening probability distributions.
+                Larger temperature gives softer distributions.
+        """
+        super().compile(optimizer=optimizer)
+        self.student_loss_fn = student_loss_fn
+        self.distillation_loss_fn = distillation_loss_fn
+        self.alpha = alpha
+        self.temperature = temperature
+
+    def train_step(self, data):
+        # Unpack data
+        x, y = data
+        x_student, x_teacher = split_data(x)
+        # Forward pass of teacher
+        teacher_predictions = self.teacher(x_teacher, training=False)
+
+        with tf.GradientTape() as tape:
+            # Forward pass of student
+            student_predictions = self.student(x_student, training=True)
+
+            # Compute losses
+            student_loss = self.student_loss_fn(y, student_predictions)
+
+            # Compute scaled distillation loss from https://arxiv.org/abs/1503.02531
+            # The magnitudes of the gradients produced by the soft targets scale
+            # as 1/T^2, multiply them by T^2 when using both hard and soft targets.
+            distillation_loss = self.distillation_loss_fn(teacher_predictions,student_predictions)
+            loss = self.alpha * student_loss + (1 - self.alpha) * distillation_loss
+
+        # Compute gradients
+        trainable_vars = self.student.trainable_variables
+        gradients = tape.gradient(loss, trainable_vars)
+
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+
+        # Update the metrics configured in `compile()`.
+        self.compiled_metrics.update_state(y, student_predictions)
+
+        # Return a dict of performance
+        results = {m.name: m.result() for m in self.metrics}
+        results.update(
+            {"student_loss": student_loss, "distillation_loss": distillation_loss}
+        )
+        return results
+
+    def test_step(self, data):
+        # Unpack the data
+        x, y = data
+        x_student, x_teacher = split_data(x)    
+        # Compute predictions
+        y_prediction = self.student(x_student, training=False)
+
+        # Calculate the loss
+        student_loss = self.student_loss_fn(y, y_prediction)
+
+        # Update the metrics.
+        self.compiled_metrics.update_state(y, y_prediction)
+
+        # Return a dict of performance
+        results = {m.name: m.result() for m in self.metrics}
+        results.update({"student_loss": student_loss})
+        return results
+    
+    def predict_step(self, data):
+        x_student, x_teacher = split_data(data)
+        return ({"student_prediction": self.student(x_student, training=False)})
 
 def sim_balls_and_bins(n, p_participate, l, seed = 0):
     # simulate a balls-and-bins trial of length l, with probability p_participate with n nodes
@@ -57,7 +146,11 @@ def est_balls_and_bins(trial_arr,p_participate):
     l = len(trial_arr)
     z = np.sum((trial_arr==0))
     # print(f"Number of empty slots = {z}")
-    return np.log(z/l)/(np.log(1-p_participate/l))
+    if(z):
+        return np.log(z/l)/(np.log(1-p_participate/l))
+    else:
+        print("z=0")
+        return max_num_nodes
 def geometric_hash(ID, l):
     # l bit nmber ID
     str = format(ID, f'0{l}b')
@@ -90,13 +183,22 @@ def normalize_feature_vec(bm, nhat, bnb_estimate):
     feature_vec = np.array(list(bm)+[nhat/max_num_nodes, bnb_estimate/max_num_nodes])
     # feature_vec = np.array(list(bm))
     return feature_vec
-def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
+def student_info(feature_vec):
+    # returns a student input vec
+    bm = feature_vec[:, :-2]
+    bm *= max_num_nodes/(bm.shape[1])
+    bm = tf.where(bm>1, 1.0, bm/2)
+    bm = tf.concat([bm, feature_vec[:, -2:]], -1)
+    return bm
+def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
     # runs a full length simulation of evolving node cardinalities
     # first run LoF to get started 
     # LoF with l = log2(max_num_nodes) slots
-    perf = np.zeros((1,3))
+    perf = np.zeros(3)
+    decay_perf = np.zeros(3)
     curr_state = 120
     steps = mc.simulate(num_iters, curr_state, seed=seed)
+    
     for i in range(num_iters):
         n_truth = int(steps[i])
         n_truth_prev = int(steps[i-1])
@@ -109,7 +211,7 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
         else:
             # use NN for rough estimate of previous slot 
             nhat = n_prediction[0][0] # predicted by NN in previous slot
-            # nhat = n_prev by NN
+            # nhat = n_truth_prev # by NN
         if(nhat>0): 
             p_participate = min(1, 1.6*l/nhat)
         else:
@@ -119,78 +221,125 @@ def run_sim(mc, num_iters, l, ID_bits, model, split,tag, seed = 0):
         bnb_estimate = est_balls_and_bins(bnb_bm, p_participate)
         # train NN with bnb_bm, nhat, l, n_bnb to predict n_truth
         feature_vec = normalize_feature_vec(bnb_bm, nhat, bnb_estimate)
-        X = feature_vec
-        y = np.array([n_truth/max_num_nodes])
-        X = X.reshape(1, len(X))
-        y = y.reshape(1, len(y))
-        # print(feature_vec)
-        if(i==500):
-            print(f"Feature vec for n={n_truth} is {X}, target is {y}")
-            X_500 = X
-            y_500 = y
-        if(i%100==0 and i>500):
-            n_500 = model.predict(X_500, verbose=-1)
-            print(f"at {i}, Prediction = {n_500[0][0]:.2f}, Actual = {y_500}")
-        n_prediction = (model.predict(X, verbose=-1))*max_num_nodes
-        if(n_truth):
-            perf[0,0] = (n_prediction-n_truth)/n_truth
-            perf[0,1] = (bnb_estimate-n_truth)/n_truth
-        else:
-            perf[0,0] = (n_prediction-n_truth)
-            perf[0,1] = (bnb_estimate-n_truth)
-        perf[0,2] = n_truth
-        perf[0,:] = [str(elem) for elem in perf[0,:]]
-        f = open(f"./data/sim_{tag}.csv", 'a')
-        np.savetxt(f, perf, delimiter=',')
-        # f.write("\n")
-        f.close()
-        print(f"Step {i} Actual : {n_truth}, Predicted : {n_prediction[0][0]:.2f}", end='\r')
-        if(i<num_iters*split):                
-            model.fit(X,y,verbose=-1)
-    model.save(f"./models/model_{tag}")
+        feature_vec = np.append(feature_vec, n_truth_prev/max_num_nodes)
+        data_vec = np.append(feature_vec, n_truth/max_num_nodes)
+        feature_vec = np.reshape(feature_vec, (1, feature_vec_length+1))
+        decay_name = f"./data/decay_{tag}.csv"
+        if(i==200):
+            test_feature_vec = feature_vec
+            n_test_truth = n_truth
+        if(i>=200 and i%100 == 0):
+            test_prediction = model.predict(test_feature_vec, verbose=-1)
+            n_test_prediction = max_num_nodes*test_prediction["student_prediction"]
+            decay_perf[0]=i
+            decay_perf[1]=n_test_prediction
+            decay_perf[2]=n_truth
+            print(f"i={i}, NN={n_test_prediction[0][0]}, actual = {n_test_truth} \n")
+            with open(decay_name, 'a') as de:
+                writer=csv.writer(de)
+                writer.writerow(decay_perf)
+        dict_prediction = model.predict(feature_vec, verbose=-1)
+        n_prediction = max_num_nodes*dict_prediction["student_prediction"]
+        # n_prediction = max_num_nodes*model.predict(feature_vec, verbose=-1)
+        perf[0] = (n_prediction[0][0] - n_truth)/n_truth
+        perf[1] = (bnb_estimate - n_truth)/n_truth
+        perf[2] = n_truth
+        print(f"Step={i} : Actual={n_truth}, Predicted={n_prediction[0][0]:.2f}, BnB estimate = {bnb_estimate:.2f}", end='\r')
+        fname = f"./data/student_{tag}.csv"
+        with open(fname, 'a') as f:
+            writer=csv.writer(f)
+            writer.writerow(perf)
+        dname = f"./data/train_{tag}.csv"
+        with open(dname, 'a') as d:
+            writer=csv.writer(d)
+            writer.writerow(data_vec)
+        
+        if(i<split*num_iters):
+            y = np.array(n_truth/max_num_nodes)
+            y = np.reshape(y, (1,1))
+            model.fit(feature_vec, y, epochs=1, verbose=1)
     return 0
+if __name__== "__main__":
+    max_num_nodes = 2**(8)
+    q = 0.2
+    p = (1-q)/2
+    jumps= 5
+    min_active_nodes = 10
+    num_runs = 1
+    num_iters = int(1e3)
+    split = 0.9
+    length_of_trial = 50
+    tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
+    states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
+    # eps = 0.1
+    # length_of_trial = int(65/((1-0.04**eps)**2))
+    print(f"Length of trial is l={length_of_trial:.2f}")
+    print(f"Epsilon for trial = {np.log(1 - ((65/length_of_trial)**0.5))/np.log(0.04):.3f}")
+    tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
+    tpm = np.linalg.matrix_power(tpm, jumps)
+    mc = pydtmc.MarkovChain(tpm, states)
+    curr_state = str(int(max_num_nodes/2))
+    feature_vec_length = length_of_trial+2
+    ctag = tag + "_r0"
+    if(os.path.exists(f"./data/student_{ctag}.csv")):
+        os.remove(f"./data/student_{ctag}.csv")
+    if(os.path.exists(f"./data/train_{ctag}.csv")):
+        os.remove(f"./data/train_{ctag}.csv")
+    if(os.path.exists(f"./data/decay_{ctag}.csv")):
+        os.remove(f"./data/decay_{ctag}.csv")
 
-tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
-tpm = np.linalg.matrix_power(tpm, jumps)
-mc = pydtmc.MarkovChain(tpm, states)
-curr_state = str(int(max_num_nodes/2))
-feature_vec_length = length_of_trial+2
-model = Sequential()
-model.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-model.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-model.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-model.add(Dense(1, activation='linear'))
-model.compile(loss='mean_squared_error', optimizer='SGD')
-model.summary()
+    teacher = load_model(f"./models/model_two_l50_j5_n50000_r0")
+    print(f"Loaded ./models/model_two_l50_j5_n50000_r0 as teacher")
+    for layer in teacher.layers:
+        layer.trainable = False
 
+    student = Sequential()
+    student.add(InputLayer(input_shape=(feature_vec_length, )))
+    student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
+    student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    student.add(Dense(1, activation='linear'))
+    learning_rate = 2e-3
+    momentum = 0
+    opt = tf.keras.optimizers.SGD(
+        learning_rate=learning_rate,
+        momentum = 0
+    )
+    distiller = Distiller(student=student, teacher=teacher)
+    distiller.compile(
+        optimizer=opt,    
+        student_loss_fn=MeanSquaredError(),
+        distillation_loss_fn=MeanSquaredError(),
+        alpha=0.1,
+        temperature=1,
+    )
+    run_sim(mc, num_iters, length_of_trial, 8, distiller, ctag,split, 3)
+    print(f" data in ./data/student_{ctag}.csv")
 
-split_iter = int(num_iters*split)
+    ## Plotting 
+    perf_vec = np.genfromtxt(f"./data/student_{ctag}.csv", delimiter=",")
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
 
-for i in range(num_runs):
-    ctag = tag+f"_r{i}"
-    if(os.path.exists(f"./data/sim_{ctag}.csv")):
-        os.remove(f"./data/sim_{ctag}.csv")
-    if(i):
-        model = load_model(f"./models/model_{tag}_r{i-1}")
-        print(f"Loaded ./models/model_{tag}_r{i-1}")
-    run_sim(mc, num_iters, length_of_trial, 8, model, split, ctag, i)
-    ret = np.genfromtxt(f"./data/sim_{ctag}.csv", delimiter=',')
-    print(ret.shape)
+    ax1.plot(perf_vec[:,0], label="NN", alpha=1)
+    ax1.plot(perf_vec[:,1], label="BnB", alpha=0.8, linewidth=0.8)
+    ax2.plot(perf_vec[:,2], alpha = 0.5, color='g', linewidth=0.8)
+    ax1.grid()
+    ax1.legend()
+    ax1.set_xlabel("Timeslots")
+    ax1.set_ylabel("Relative error")
+    ax2.set_ylabel("Number of nodes", color='g')
+    plt.savefig(f"./plots/student_sgd_{ctag}.png")
+
+    decay_vec = np.genfromtxt(f"./data/decay_{ctag}.csv", delimiter=",")
     plt.figure()
-    avg_error = np.mean((ret[split_iter:,:2]), axis=0)
-    std_error = np.std((ret[split_iter:,:2]), axis=0)
-    plt.plot(ret[:,0], label=f"NN, mean={avg_error[0]:.1g}, stddev={std_error[0]:.1g}", linewidth=0.6)
-    plt.plot(ret[:,1], label=f"BnB, mean={avg_error[1]:.1g}, stddev={std_error[1]:.1g}", alpha=0.9, linewidth=0.6)
-    plt.axvline(split_iter, label="Split", linestyle='dashed', color='red')
+    plt.plot(decay_vec[:, 0], decay_vec[:, 1], label = "Prediction")
+    plt.plot(decay_vec[:, 0], decay_vec[:, 2], label = "Present Truth")
+    plt.axhline(decay_vec[0,2], label="Actual truth")
+    plt.xlabel("Iteration")
+    plt.ylabel("Number of nodes")
     plt.legend()
     plt.grid()
-    # plt.ylim(-0.5, 0.5)
-    plt.xlabel("Timeslots")
-    plt.ylabel("Relative error")
-    plt.savefig(f"./plots/sim_{ctag}.png")
-    plt.figure()
-    plt.grid()
-    plt.plot(ret[:,2])
-    plt.xlabel("Timeslots")
-    plt.ylabel("Number of active nodes")
-    plt.savefig(f"./plots/truth_{ctag}.png")
+    plt.title(f"Deterioration of performance with training (SGD, lr={learning_rate:.1e})")
+    plt.savefig(f"./plots/decay_sgd_{ctag}.png")
