@@ -11,7 +11,7 @@ from tensorflow.keras import Model
 from tensorflow.keras.losses import MeanSquaredError
 # generate the transition matrix
 
-def split_data(data, feature_vec_length=feature_vec_length):
+def split_data(data):
     x = data
     x_student = x[:, :feature_vec_length]
     temp = tf.reshape(x[:, feature_vec_length], [-1, 1])
@@ -190,6 +190,22 @@ def student_info(feature_vec):
     bm = tf.where(bm>1, 1.0, bm/2)
     bm = tf.concat([bm, feature_vec[:, -2:]], -1)
     return bm
+def mc_timeseries(mc, num_iters, curr_state, num_anomalies, seed):
+    anomaly_start_times = np.random.choice(num_iters, num_anomalies, replace=False, seed=seed)
+    curr_time = 0
+    simulated_timeseries = []
+    for i in range(num_anomalies):
+        # start 
+        a_time = anomaly_start_times[i]
+        timeseries = mc.simulate(a_time - curr_time, curr_state, seed)
+        anomaly_sequence = np.linspace(int(timeseries[-1]), max_num_nodes, 5)
+        anomaly_sequence = [int(i) for i in anomaly_sequence]
+        simulated_timeseries+=anomaly_sequence
+        curr_time = a_time
+        curr_state = max_num_nodes
+    # anomalies done
+    
+    return 0
 def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
     # runs a full length simulation of evolving node cardinalities
     # first run LoF to get started 
@@ -249,15 +265,15 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
         with open(fname, 'a') as f:
             writer=csv.writer(f)
             writer.writerow(perf)
-        dname = f"./data/train_{tag}.csv"
-        with open(dname, 'a') as d:
-            writer=csv.writer(d)
-            writer.writerow(data_vec)
+        # dname = f"./data/train_{tag}.csv"
+        # with open(dname, 'a') as d:
+        #     writer=csv.writer(d)
+        #     writer.writerow(data_vec)
         
-        if(i<split*num_iters):
-            y = np.array(n_truth/max_num_nodes)
-            y = np.reshape(y, (1,1))
-            model.fit(feature_vec, y, epochs=1, verbose=1)
+        # if(i<split*num_iters):
+        #     y = np.array(n_truth/max_num_nodes)
+        #     y = np.reshape(y, (1,1))
+        #     model.fit(feature_vec, y, epochs=1, verbose=1)
     return 0
 if __name__== "__main__":
     max_num_nodes = 2**(8)
@@ -266,7 +282,7 @@ if __name__== "__main__":
     jumps= 5
     min_active_nodes = 10
     num_runs = 1
-    num_iters = int(1e3)
+    num_iters = int(1e4)
     split = 0.9
     length_of_trial = 50
     tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
@@ -280,7 +296,7 @@ if __name__== "__main__":
     mc = pydtmc.MarkovChain(tpm, states)
     curr_state = str(int(max_num_nodes/2))
     feature_vec_length = length_of_trial+2
-    ctag = tag + "_r0"
+    ctag = tag + "_r2"
     if(os.path.exists(f"./data/student_{ctag}.csv")):
         os.remove(f"./data/student_{ctag}.csv")
     if(os.path.exists(f"./data/train_{ctag}.csv")):
@@ -292,19 +308,21 @@ if __name__== "__main__":
     print(f"Loaded ./models/model_two_l50_j5_n50000_r0 as teacher")
     for layer in teacher.layers:
         layer.trainable = False
-
-    student = Sequential()
-    student.add(InputLayer(input_shape=(feature_vec_length, )))
-    student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
-    student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(1, activation='linear'))
+    student = load_model(f"./models/student")
+    print(f"Loaded ./models/student as student")
+    for layer in student.layers:
+        layer.trainable = False
+    # student = Sequential()
+    # student.add(InputLayer(input_shape=(feature_vec_length, )))
+    # student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
+    # student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+    # student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    # student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    # student.add(Dense(1, activation='linear'))
     learning_rate = 2e-3
     momentum = 0
-    opt = tf.keras.optimizers.SGD(
+    opt = tf.keras.optimizers.Adam(
         learning_rate=learning_rate,
-        momentum = 0
     )
     distiller = Distiller(student=student, teacher=teacher)
     distiller.compile(
@@ -314,7 +332,7 @@ if __name__== "__main__":
         alpha=0.1,
         temperature=1,
     )
-    run_sim(mc, num_iters, length_of_trial, 8, distiller, ctag,split, 3)
+    run_sim(mc, num_iters, length_of_trial, 8, distiller, ctag,split, 25)
     print(f" data in ./data/student_{ctag}.csv")
 
     ## Plotting 
@@ -330,7 +348,7 @@ if __name__== "__main__":
     ax1.set_xlabel("Timeslots")
     ax1.set_ylabel("Relative error")
     ax2.set_ylabel("Number of nodes", color='g')
-    plt.savefig(f"./plots/student_sgd_{ctag}.png")
+    plt.savefig(f"./plots/student_adam_offline_{ctag}.png")
 
     decay_vec = np.genfromtxt(f"./data/decay_{ctag}.csv", delimiter=",")
     plt.figure()
@@ -342,4 +360,4 @@ if __name__== "__main__":
     plt.legend()
     plt.grid()
     plt.title(f"Deterioration of performance with training (SGD, lr={learning_rate:.1e})")
-    plt.savefig(f"./plots/decay_sgd_{ctag}.png")
+    plt.savefig(f"./plots/decay_adam_offline_{ctag}.png")
