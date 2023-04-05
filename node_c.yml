@@ -5,44 +5,38 @@ channels:
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
-  - absl-py=1.4.0=pyhd8ed1ab_0
-  - aiosignal=1.3.1=pyhd8ed1ab_0
-  - appdirs=1.4.4=pyh9f0ad1d_0
-  - asttokens=2.0.5=pyhd3eb1b0_0
-  - astunparse=1.6.3=pyhd8ed1ab_0
-  - async-timeout=4.0.2=pyhd8ed1ab_0
-  - attrs=22.2.0=pyh71513ae_0
-  - backcall=0.2.0=pyhd3eb1b0_0
-  - blinker=1.5=pyhd8ed1ab_0
+  - aiohttp=3.8.3=py310h5764c6d_1
   - brotli=1.0.9=h166bdaf_8
   - brotli-bin=1.0.9=h166bdaf_8
+  - brotlipy=0.7.0=py310h5764c6d_1005
   - bzip2=1.0.8=h7f98852_4
   - c-ares=1.18.1=h7f98852_0
   - ca-certificates=2023.01.10=h06a4308_0
-  - cached-property=1.5.2=hd8ed1ab_1
   - cached_property=1.5.2=pyha770c72_1
-  - cachetools=5.3.0=pyhd8ed1ab_0
-  - charset-normalizer=2.1.1=pyhd8ed1ab_0
-  - cycler=0.11.0=pyhd8ed1ab_0
-  - decorator=5.1.1=pyhd3eb1b0_0
-  - executing=0.8.3=pyhd3eb1b0_0
-  - flatbuffers=22.12.06=hcb278e6_2
+  - certifi=2022.12.7=py310h06a4308_0
+  - cffi=1.15.1=py310h255011f_3
+  - click=8.1.3=py310hff52083_1
+  - comm=0.1.2=py310h06a4308_0
+  - contourpy=1.0.7=py310hdf3cbec_0
+  - cryptography=39.0.0=py310h34c0648_0
+  - debugpy=1.5.1=py310h295c915_0
+  - entrypoints=0.4=py310h06a4308_0
+  - fonttools=4.38.0=py310h5764c6d_1
   - freetype=2.12.1=hca18f0e_1
-  - gast=0.4.0=pyh9f0ad1d_0
+  - frozenlist=1.3.3=py310h5764c6d_0
   - giflib=5.2.1=h36c2ea0_2
-  - google-auth=2.16.0=pyh1a96a4e_1
-  - google-auth-oauthlib=0.4.6=pyhd8ed1ab_0
-  - google-pasta=0.2.0=pyh8c360ce_0
+  - grpcio=1.51.1=py310h4a5735c_1
+  - h5py=3.8.0=nompi_py310h0311031_100
   - hdf5=1.12.2=nompi_h4df4325_101
   - icu=70.1=h27087fc_0
-  - idna=3.4=pyhd8ed1ab_0
-  - importlib-metadata=6.0.0=pyha770c72_0
+  - ipykernel=6.19.2=py310h2f386ee_0
+  - ipython=8.8.0=py310h06a4308_0
+  - jedi=0.18.1=py310h06a4308_1
   - jpeg=9e=h166bdaf_2
   - jupyter_client=7.4.8=py310h06a4308_0
   - jupyter_core=5.1.1=py310h06a4308_0
-  - keras=2.11.0=pyhd8ed1ab_0
-  - keras-preprocessing=1.1.2=pyhd8ed1ab_0
   - keyutils=1.6.1=h166bdaf_0
+  - kiwisolver=1.4.4=py310hbf28c38_1
   - krb5=1.20.1=h81ceb04_0
   - lcms2=2.14=hfd0df8a_1
   - ld_impl_linux-64=2.39=hcc3a1bd_1
@@ -80,107 +74,122 @@ dependencies:
   - libwebp-base=1.2.4=h166bdaf_0
   - libxcb=1.13=h7f98852_1004
   - libzlib=1.2.13=h166bdaf_4
-  - markdown=3.4.1=pyhd8ed1ab_0
+  - markupsafe=2.1.2=py310h1fa729e_0
   - matplotlib-base=3.6.3=py310he60537e_0
-  - munkres=1.1.4=pyh9f0ad1d_0
+  - matplotlib-inline=0.1.6=py310h06a4308_0
+  - multidict=6.0.4=py310h1fa729e_0
   - ncurses=6.3=h27087fc_1
-  - networkx=3.0=pyhd8ed1ab_0
-  - oauthlib=3.2.2=pyhd8ed1ab_0
+  - nest-asyncio=1.5.6=py310h06a4308_0
+  - numpy=1.24.1=py310h08bbf29_0
   - openjpeg=2.5.0=hfec8fc6_2
   - openssl=3.0.7=h0b41bf4_2
   - opt_einsum=3.3.0=pyhd8ed1ab_1
-  - packaging=23.0=pyhd8ed1ab_0
-  - parso=0.8.3=pyhd3eb1b0_0
-  - pexpect=4.8.0=pyhd3eb1b0_3
-  - pickleshare=0.7.5=pyhd3eb1b0_1003
-  - pip=22.3.1=pyhd8ed1ab_0
-  - pooch=1.6.0=pyhd8ed1ab_0
+  - pillow=9.4.0=py310h4927cde_0
+  - platformdirs=2.5.2=py310h06a4308_0
+  - prompt-toolkit=3.0.36=py310h06a4308_0
+  - protobuf=4.21.12=py310heca2aa9_0
+  - psutil=5.9.0=py310h5eee18b_0
   - pthread-stubs=0.4=h36c2ea0_1001
-  - ptyprocess=0.7.0=pyhd3eb1b0_2
   - pure_eval=0.2.2=pyhd3eb1b0_0
-  - pyasn1=0.4.8=py_0
-  - pyasn1-modules=0.2.7=py_0
-  - pycparser=2.21=pyhd8ed1ab_0
-  - pydtmc=8.0.0=pyhd8ed1ab_0
-  - pygments=2.11.2=pyhd3eb1b0_0
-  - pyjwt=2.6.0=pyhd8ed1ab_0
-  - pyopenssl=23.0.0=pyhd8ed1ab_0
-  - pyparsing=3.0.9=pyhd8ed1ab_0
+  - pysocks=1.7.1=py310hff52083_5
   - python=3.10.8=h4a9ceb5_0_cpython
-  - python-dateutil=2.8.2=pyhd8ed1ab_0
   - python-flatbuffers=23.1.21=pyhd8ed1ab_0
   - python_abi=3.10=3_cp310
-  - pyu2f=0.1.5=pyhd8ed1ab_0
+  - pyzmq=23.2.0=py310h6a678d5_0
   - re2=2023.02.01=hcb278e6_0
   - readline=8.1.2=h0f457ee_0
-  - requests=2.28.2=pyhd8ed1ab_0
-  - requests-oauthlib=1.3.1=pyhd8ed1ab_0
-  - rsa=4.9=pyhd8ed1ab_0
-  - setuptools=66.1.1=pyhd8ed1ab_0
-  - six=1.16.0=pyh6c4a22f_0
+  - scipy=1.10.0=py310h8deb116_0
   - snappy=1.1.9=hbd366e4_2
   - stack_data=0.2.0=pyhd3eb1b0_0
-  - tensorboard=2.11.2=pyhd8ed1ab_0
-  - tensorboard-plugin-wit=1.8.1=pyhd8ed1ab_0
+  - tensorboard-data-server=0.6.1=py310h600f1e7_4
+  - tensorflow=2.11.0=cpu_py310hd1aba9c_0
   - tensorflow-base=2.11.0=cpu_py310hc9b7e7f_0
-  - termcolor=2.2.0=pyhd8ed1ab_0
+  - tensorflow-estimator=2.11.0=cpu_py310hfed9998_0
   - tk=8.6.12=h27826a3_0
-  - typing-extensions=4.4.0=hd8ed1ab_0
+  - tornado=6.2=py310h5eee18b_0
+  - traitlets=5.7.1=py310h06a4308_0
   - typing_extensions=4.4.0=pyha770c72_0
   - tzdata=2022g=h191b570_0
-  - urllib3=1.26.14=pyhd8ed1ab_0
-  - wcwidth=0.2.5=pyhd3eb1b0_0
-  - werkzeug=2.2.2=pyhd8ed1ab_0
-  - wheel=0.38.4=pyhd8ed1ab_0
+  - unicodedata2=15.0.0=py310h5764c6d_0
+  - wrapt=1.14.1=py310h5764c6d_1
   - xorg-libxau=1.0.9=h7f98852_0
   - xorg-libxdmcp=1.1.3=h7f98852_0
   - xz=5.2.6=h166bdaf_0
+  - yarl=1.8.2=py310h5764c6d_0
   - zeromq=4.3.4=h2531618_0
-  - zipp=3.12.0=pyhd8ed1ab_0
   - zlib=1.2.13=h166bdaf_4
   - zstd=1.5.2=h3eb15da_6
   - pip:
-    - aiohttp==3.8.3
-    - brotlipy==0.7.0
-    - certifi==2022.12.7
-    - cffi==1.15.1
-    - click==8.1.3
-    - comm==0.1.2
-    - contourpy==1.0.7
-    - cryptography==39.0.0
-    - debugpy==1.5.1
-    - entrypoints==0.4
-    - fonttools==4.38.0
-    - frozenlist==1.3.3
-    - grpcio==1.51.1
-    - h5py==3.8.0
-    - ipykernel==6.19.2
-    - ipython==8.8.0
-    - jedi==0.18.1
-    - jupyter-client==7.4.8
-    - jupyter-core==5.1.1
-    - kiwisolver==1.4.4
-    - markupsafe==2.1.2
-    - matplotlib==3.6.3
-    - matplotlib-inline==0.1.6
-    - multidict==6.0.4
-    - nest-asyncio==1.5.6
-    - numpy==1.24.1
-    - pillow==9.4.0
-    - platformdirs==2.5.2
-    - prompt-toolkit==3.0.36
-    - protobuf==4.21.12
-    - psutil==5.9.0
-    - pysocks==1.7.1
-    - pyzmq==23.2.0
-    - scipy==1.10.0
-    - tensorboard-data-server==0.6.1
-    - tensorflow==2.11.0
-    - tensorflow-estimator==2.11.0
-    - tornado==6.2
-    - traitlets==5.7.1
-    - unicodedata2==15.0.0
-    - wrapt==1.14.1
-    - yarl==1.8.2
+    - absl-py==1.4.0
+    - aiosignal==1.3.1
+    - appdirs==1.4.4
+    - asttokens==2.0.5
+    - astunparse==1.6.3
+    - async-timeout==4.0.2
+    - attrs==22.2.0
+    - backcall==0.2.0
+    - blinker==1.5
+    - cached-property==1.5.2
+    - cachetools==5.3.0
+    - charset-normalizer==2.1.1
+    - cycler==0.11.0
+    - decorator==5.1.1
+    - executing==0.8.3
+    - fastjsonschema==2.16.3
+    - flatbuffers==23.1.21
+    - gast==0.4.0
+    - google-auth==2.16.0
+    - google-auth-oauthlib==0.4.6
+    - google-pasta==0.2.0
+    - idna==3.4
+    - importlib-metadata==6.0.0
+    - jsonschema==4.17.3
+    - jupytext==1.14.5
+    - keras==2.11.0
+    - keras-preprocessing==1.1.2
+    - markdown==3.4.1
+    - markdown-it-py==2.2.0
+    - mdit-py-plugins==0.3.5
+    - mdurl==0.1.2
+    - munkres==1.1.4
+    - nbformat==5.7.3
+    - networkx==3.0
+    - oauthlib==3.2.2
+    - opt-einsum==3.3.0
+    - packaging==23.0
+    - parso==0.8.3
+    - pexpect==4.8.0
+    - pickleshare==0.7.5
+    - pip==22.3.1
+    - pooch==1.6.0
+    - ptyprocess==0.7.0
+    - pure-eval==0.2.2
+    - pyasn1==0.4.8
+    - pyasn1-modules==0.2.7
+    - pycparser==2.21
+    - pydtmc==8.0.0
+    - pygments==2.11.2
+    - pyjwt==2.6.0
+    - pyopenssl==23.0.0
+    - pyparsing==3.0.9
+    - pyrsistent==0.19.3
+    - python-dateutil==2.8.2
+    - pyu2f==0.1.5
+    - pyyaml==6.0
+    - requests==2.28.2
+    - requests-oauthlib==1.3.1
+    - rsa==4.9
+    - setuptools==66.1.1
+    - six==1.16.0
+    - stack-data==0.2.0
+    - tensorboard==2.11.2
+    - tensorboard-plugin-wit==1.8.1
+    - termcolor==2.2.0
+    - toml==0.10.2
+    - typing-extensions==4.4.0
+    - urllib3==1.26.14
+    - wcwidth==0.2.5
+    - werkzeug==2.2.2
+    - wheel==0.38.4
+    - zipp==3.12.0
 prefix: /home/pranav/anaconda3/envs/node_c
-
