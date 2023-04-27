@@ -9,9 +9,10 @@ from tensorflow.keras.layers import Dense, Layer, Lambda, InputLayer
 from tensorflow.keras.metrics import mean_squared_error as mse 
 from tensorflow.keras import Model
 from tensorflow.keras.losses import MeanSquaredError
+from config import *
 # generate the transition matrix
 
-def split_data(data):
+def split_data(data, feature_vec_length = feature_vec_length):
     x = data
     x_student = x[:, :feature_vec_length]
     temp = tf.reshape(x[:, feature_vec_length], [-1, 1])
@@ -206,7 +207,7 @@ def mc_timeseries(mc, num_iters, curr_state, num_anomalies, seed):
     # anomalies done
     
     return 0
-def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
+def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state, seed = 0, fit_after_train=False, store_train=True, track_decay=False):
     # runs a full length simulation of evolving node cardinalities
     # first run LoF to get started 
     # LoF with l = log2(max_num_nodes) slots
@@ -241,19 +242,20 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
         data_vec = np.append(feature_vec, n_truth/max_num_nodes)
         feature_vec = np.reshape(feature_vec, (1, feature_vec_length+1))
         decay_name = f"./data/decay_{tag}.csv"
-        if(i==200):
-            test_feature_vec = feature_vec
-            n_test_truth = n_truth
-        if(i>=200 and i%100 == 0):
-            test_prediction = model.predict(test_feature_vec, verbose=-1)
-            n_test_prediction = max_num_nodes*test_prediction["student_prediction"]
-            decay_perf[0]=i
-            decay_perf[1]=n_test_prediction
-            decay_perf[2]=n_truth
-            print(f"i={i}, NN={n_test_prediction[0][0]}, actual = {n_test_truth} \n")
-            with open(decay_name, 'a') as de:
-                writer=csv.writer(de)
-                writer.writerow(decay_perf)
+        if(track_decay):
+            if(i==200):
+                test_feature_vec = feature_vec
+                n_test_truth = n_truth
+            if(i>=200 and i%100 == 0):
+                test_prediction = model.predict(test_feature_vec, verbose=-1)
+                n_test_prediction = max_num_nodes*test_prediction["student_prediction"]
+                decay_perf[0]=i
+                decay_perf[1]=n_test_prediction
+                decay_perf[2]=n_truth
+                print(f"i={i}, NN={n_test_prediction[0][0]}, actual = {n_test_truth} \n")
+                with open(decay_name, 'a') as de:
+                    writer=csv.writer(de)
+                    writer.writerow(decay_perf)
         dict_prediction = model.predict(feature_vec, verbose=-1)
         n_prediction = max_num_nodes*dict_prediction["student_prediction"]
         # n_prediction = max_num_nodes*model.predict(feature_vec, verbose=-1)
@@ -265,26 +267,34 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, seed = 0):
         with open(fname, 'a') as f:
             writer=csv.writer(f)
             writer.writerow(perf)
-        # dname = f"./data/train_{tag}.csv"
-        # with open(dname, 'a') as d:
-        #     writer=csv.writer(d)
-        #     writer.writerow(data_vec)
+        if(store_train):
+            dname = f"./data/train_{tag}.csv"
+            with open(dname, 'a') as d:
+                writer=csv.writer(d)
+                writer.writerow(data_vec)
         
-        # if(i<split*num_iters):
-        #     y = np.array(n_truth/max_num_nodes)
-        #     y = np.reshape(y, (1,1))
-        #     model.fit(feature_vec, y, epochs=1, verbose=1)
+        if(fit_after_train):
+            if(i<split*num_iters):
+                y = np.array(n_truth/max_num_nodes)
+                y = np.reshape(y, (1,1))
+                model.fit(feature_vec, y, epochs=1, verbose=1)
     return 0
+def train_teacher_run_sim(mc, num_iters, l, ID_bits, tag, split, feature_vec_length = feature_vec_length, seed = 0):
+    # runs naive teacher model to generate data
+    teacher = Sequential()
+    teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    teacher.add(Dense(1, activation='linear'))
+    teacher.compile(loss='mean_squared_error', optimizer='adam')
+    tag = f"reform_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
+    
+    return 0
+def train_student_given_teacher_run_sim():
+    return 0
+def evaluate_student_teacher_run_sim():
+    return 0 
 if __name__== "__main__":
-    max_num_nodes = 2**(8)
-    q = 0.2
-    p = (1-q)/2
-    jumps= 5
-    min_active_nodes = 10
-    num_runs = 1
-    num_iters = int(1e4)
-    split = 0.9
-    length_of_trial = 50
     tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
     states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
     # eps = 0.1
@@ -294,8 +304,6 @@ if __name__== "__main__":
     tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
     tpm = np.linalg.matrix_power(tpm, jumps)
     mc = pydtmc.MarkovChain(tpm, states)
-    curr_state = str(int(max_num_nodes/2))
-    feature_vec_length = length_of_trial+2
     ctag = tag + "_r2"
     if(os.path.exists(f"./data/student_{ctag}.csv")):
         os.remove(f"./data/student_{ctag}.csv")
