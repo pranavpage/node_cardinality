@@ -207,15 +207,15 @@ def mc_timeseries(mc, num_iters, curr_state, num_anomalies, seed):
     # anomalies done
     
     return 0
-def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state, seed = 0, fit_after_train=False, store_train=True, track_decay=False):
+def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state, seed = 0,\
+    fit_after_train=False, store_train=True, track_decay=False, add_n_truth_prev=False, is_teacher=True):
     # runs a full length simulation of evolving node cardinalities
     # first run LoF to get started 
     # LoF with l = log2(max_num_nodes) slots
     perf = np.zeros(3)
     decay_perf = np.zeros(3)
-    curr_state = 120
     steps = mc.simulate(num_iters, curr_state, seed=seed)
-    
+    feature_vec_length = l+2+(add_n_truth_prev)
     for i in range(num_iters):
         n_truth = int(steps[i])
         n_truth_prev = int(steps[i-1])
@@ -238,9 +238,10 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
         bnb_estimate = est_balls_and_bins(bnb_bm, p_participate)
         # train NN with bnb_bm, nhat, l, n_bnb to predict n_truth
         feature_vec = normalize_feature_vec(bnb_bm, nhat, bnb_estimate)
-        feature_vec = np.append(feature_vec, n_truth_prev/max_num_nodes)
+        if(add_n_truth_prev):
+            feature_vec = np.append(feature_vec, n_truth_prev/max_num_nodes)
         data_vec = np.append(feature_vec, n_truth/max_num_nodes)
-        feature_vec = np.reshape(feature_vec, (1, feature_vec_length+1))
+        feature_vec = np.reshape(feature_vec, (1, feature_vec_length))
         decay_name = f"./data/decay_{tag}.csv"
         if(track_decay):
             if(i==200):
@@ -248,7 +249,10 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
                 n_test_truth = n_truth
             if(i>=200 and i%100 == 0):
                 test_prediction = model.predict(test_feature_vec, verbose=-1)
-                n_test_prediction = max_num_nodes*test_prediction["student_prediction"]
+                if(is_teacher):
+                    n_test_prediction = max_num_nodes*test_prediction["prediction"]
+                else:
+                    n_test_prediction = max_num_nodes*test_prediction["student_prediction"]
                 decay_perf[0]=i
                 decay_perf[1]=n_test_prediction
                 decay_perf[2]=n_truth
@@ -257,13 +261,16 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
                     writer=csv.writer(de)
                     writer.writerow(decay_perf)
         dict_prediction = model.predict(feature_vec, verbose=-1)
-        n_prediction = max_num_nodes*dict_prediction["student_prediction"]
+        if(is_teacher):
+            n_prediction = max_num_nodes*dict_prediction
+        else:
+            n_prediction = max_num_nodes*dict_prediction["student_prediction"]
         # n_prediction = max_num_nodes*model.predict(feature_vec, verbose=-1)
         perf[0] = (n_prediction[0][0] - n_truth)/n_truth
         perf[1] = (bnb_estimate - n_truth)/n_truth
         perf[2] = n_truth
         print(f"Step={i} : Actual={n_truth}, Predicted={n_prediction[0][0]:.2f}, BnB estimate = {bnb_estimate:.2f}", end='\r')
-        fname = f"./data/student_{tag}.csv"
+        fname = f"./data/perf_{tag}.csv"
         with open(fname, 'a') as f:
             writer=csv.writer(f)
             writer.writerow(perf)
@@ -277,9 +284,9 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
             if(i<split*num_iters):
                 y = np.array(n_truth/max_num_nodes)
                 y = np.reshape(y, (1,1))
-                model.fit(feature_vec, y, epochs=1, verbose=1)
-    return 0
-def train_teacher_run_sim(mc, num_iters, l, ID_bits, tag, split, feature_vec_length = feature_vec_length, seed = 0):
+                model.fit(feature_vec, y, epochs=1, verbose=-1)
+    return model
+def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, feature_vec_length = feature_vec_length, seed = 0):
     # runs naive teacher model to generate data
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
@@ -287,15 +294,45 @@ def train_teacher_run_sim(mc, num_iters, l, ID_bits, tag, split, feature_vec_len
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
     teacher.add(Dense(1, activation='linear'))
     teacher.compile(loss='mean_squared_error', optimizer='adam')
-    tag = f"reform_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
+    ctag = f"{tag}_l{int(l)}_j{jumps}_n{num_iters}"
+    # run sim for naive teacher model with training after each prediction
+    train_data_fname = f"./data/train_{ctag}.csv"
+    if(not os.path.isfile(train_data_fname)):
+        model = run_sim(mc, num_iters, l, ID_bits, teacher, ctag, split, fit_after_train=True)
+    train_data = np.genfromtxt(train_data_fname, delimiter=',')
+    print(train_data.shape)
+    return teacher
+def train_teacher_offline(num_iters, l, jumps, tag, test_train_split=0.9, epochs=500, batch_size=64):
+    fname = f"./data/train_{tag}_l{int(l)}_j{jumps}_n{num_iters}.csv"
+    data = np.genfromtxt(fname, delimiter=",")
+    np.random.shuffle(data)
+    num_samples = data.shape[0]
+    split_sample = int(split*num_samples)
+    X = data[:split_sample, :-1]
+    y = data[:split_sample, -1]
+    X_test = data[split_sample:, :-1]
+    y_test = data[split_sample:, -1]
+    y_test = np.reshape(y_test, (num_samples-split_sample, 1))
+    feature_vec_length = X.shape[1]
+    print(X.shape, y.shape)
+    print(X_test.shape, y_test.shape)
     
-    return 0
+    teacher = Sequential()
+    teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    teacher.add(Dense(1, activation='linear'))
+    teacher.compile(loss='mean_squared_error', optimizer='adam')
+    
+    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = batch_size, shuffle=True)
+    return history
 def train_student_given_teacher_run_sim():
     return 0
 def evaluate_student_teacher_run_sim():
     return 0 
 if __name__== "__main__":
-    tag = f"two_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
+    exp_name = "reform_teacher"
+    tag = f"{exp_name}_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
     states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
     # eps = 0.1
     # length_of_trial = int(65/((1-0.04**eps)**2))
@@ -304,22 +341,22 @@ if __name__== "__main__":
     tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
     tpm = np.linalg.matrix_power(tpm, jumps)
     mc = pydtmc.MarkovChain(tpm, states)
-    ctag = tag + "_r2"
-    if(os.path.exists(f"./data/student_{ctag}.csv")):
-        os.remove(f"./data/student_{ctag}.csv")
-    if(os.path.exists(f"./data/train_{ctag}.csv")):
-        os.remove(f"./data/train_{ctag}.csv")
+    ctag = tag
+    if(os.path.exists(f"./data/perf_{ctag}.csv")):
+        os.remove(f"./data/perf_{ctag}.csv")
+    # if(os.path.exists(f"./data/train_{ctag}.csv")):
+        # os.remove(f"./data/train_{ctag}.csv")
     if(os.path.exists(f"./data/decay_{ctag}.csv")):
         os.remove(f"./data/decay_{ctag}.csv")
 
-    teacher = load_model(f"./models/model_two_l50_j5_n50000_r0")
-    print(f"Loaded ./models/model_two_l50_j5_n50000_r0 as teacher")
-    for layer in teacher.layers:
-        layer.trainable = False
-    student = load_model(f"./models/student")
-    print(f"Loaded ./models/student as student")
-    for layer in student.layers:
-        layer.trainable = False
+    # teacher = load_model(f"./models/model_two_l50_j5_n50000_r0")
+    # print(f"Loaded ./models/model_two_l50_j5_n50000_r0 as teacher")
+    # for layer in teacher.layers:
+    #     layer.trainable = False
+    # student = load_model(f"./models/student")
+    # print(f"Loaded ./models/student as student")
+    # for layer in student.layers:
+    #     layer.trainable = False
     # student = Sequential()
     # student.add(InputLayer(input_shape=(feature_vec_length, )))
     # student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
@@ -327,45 +364,55 @@ if __name__== "__main__":
     # student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
     # student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
     # student.add(Dense(1, activation='linear'))
-    learning_rate = 2e-3
-    momentum = 0
-    opt = tf.keras.optimizers.Adam(
-        learning_rate=learning_rate,
-    )
-    distiller = Distiller(student=student, teacher=teacher)
-    distiller.compile(
-        optimizer=opt,    
-        student_loss_fn=MeanSquaredError(),
-        distillation_loss_fn=MeanSquaredError(),
-        alpha=0.1,
-        temperature=1,
-    )
-    run_sim(mc, num_iters, length_of_trial, 8, distiller, ctag,split, 25)
-    print(f" data in ./data/student_{ctag}.csv")
-
-    ## Plotting 
-    perf_vec = np.genfromtxt(f"./data/student_{ctag}.csv", delimiter=",")
-    fig, ax1 = plt.subplots()
-    ax2 = ax1.twinx()
-
-    ax1.plot(perf_vec[:,0], label="NN", alpha=1)
-    ax1.plot(perf_vec[:,1], label="BnB", alpha=0.8, linewidth=0.8)
-    ax2.plot(perf_vec[:,2], alpha = 0.5, color='g', linewidth=0.8)
-    ax1.grid()
-    ax1.legend()
-    ax1.set_xlabel("Timeslots")
-    ax1.set_ylabel("Relative error")
-    ax2.set_ylabel("Number of nodes", color='g')
-    plt.savefig(f"./plots/student_adam_offline_{ctag}.png")
-
-    decay_vec = np.genfromtxt(f"./data/decay_{ctag}.csv", delimiter=",")
-    plt.figure()
-    plt.plot(decay_vec[:, 0], decay_vec[:, 1], label = "Prediction")
-    plt.plot(decay_vec[:, 0], decay_vec[:, 2], label = "Present Truth")
-    plt.axhline(decay_vec[0,2], label="Actual truth")
-    plt.xlabel("Iteration")
-    plt.ylabel("Number of nodes")
-    plt.legend()
+    # learning_rate = 2e-3
+    # momentum = 0
+    # opt = tf.keras.optimizers.Adam(
+    #     learning_rate=learning_rate,
+    # )
+    # distiller = Distiller(student=student, teacher=teacher)
+    # distiller.compile(
+    #     optimizer=opt,    
+    #     student_loss_fn=MeanSquaredError(),
+    #     distillation_loss_fn=MeanSquaredError(),
+    #     alpha=0.1,
+    #     temperature=1,
+    # )
+    # teacher = gen_teacher_data_run_sim(mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
+    history = train_teacher_offline(num_iters, length_of_trial, jumps, exp_name, epochs=1000)
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
     plt.grid()
-    plt.title(f"Deterioration of performance with training (SGD, lr={learning_rate:.1e})")
-    plt.savefig(f"./plots/decay_adam_offline_{ctag}.png")
+    plt.ylim(0, 1e-3)
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
+    # print(f" data in ./data/student_{ctag}.csv")
+
+    # ## Plotting 
+    # perf_vec = np.genfromtxt(f"./data/student_{ctag}.csv", delimiter=",")
+    # fig, ax1 = plt.subplots()
+    # ax2 = ax1.twinx()
+
+    # ax1.plot(perf_vec[:,0], label="NN", alpha=1)
+    # ax1.plot(perf_vec[:,1], label="BnB", alpha=0.8, linewidth=0.8)
+    # ax2.plot(perf_vec[:,2], alpha = 0.5, color='g', linewidth=0.8)
+    # ax1.grid()
+    # ax1.legend()
+    # ax1.set_xlabel("Timeslots")
+    # ax1.set_ylabel("Relative error")
+    # ax2.set_ylabel("Number of nodes", color='g')
+    # plt.savefig(f"./plots/student_adam_offline_{ctag}.png")
+
+    # decay_vec = np.genfromtxt(f"./data/decay_{ctag}.csv", delimiter=",")
+    # plt.figure()
+    # plt.plot(decay_vec[:, 0], decay_vec[:, 1], label = "Prediction")
+    # plt.plot(decay_vec[:, 0], decay_vec[:, 2], label = "Present Truth")
+    # plt.axhline(decay_vec[0,2], label="Actual truth")
+    # plt.xlabel("Iteration")
+    # plt.ylabel("Number of nodes")
+    # plt.legend()
+    # plt.grid()
+    # plt.title(f"Deterioration of performance with training (SGD, lr={learning_rate:.1e})")
+    # plt.savefig(f"./plots/decay_adam_offline_{ctag}.png")
