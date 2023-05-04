@@ -294,7 +294,7 @@ def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, featu
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
     teacher.add(Dense(1, activation='linear'))
     teacher.compile(loss='mean_squared_error', optimizer='adam')
-    ctag = f"{tag}_l{int(l)}_j{jumps}_n{num_iters}"
+    ctag = f"teacher_{tag}_l{int(l)}_j{jumps}_n{num_iters}"
     # run sim for naive teacher model with training after each prediction
     train_data_fname = f"./data/train_{ctag}.csv"
     if(not os.path.isfile(train_data_fname)):
@@ -303,7 +303,7 @@ def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, featu
     print(train_data.shape)
     return teacher
 def train_teacher_offline(num_iters, l, jumps, tag, test_train_split=0.9, epochs=500, batch_size=64):
-    fname = f"./data/train_{tag}_l{int(l)}_j{jumps}_n{num_iters}.csv"
+    fname = f"./data/train_teacher_{tag}_l{int(l)}_j{jumps}_n{num_iters}.csv"
     data = np.genfromtxt(fname, delimiter=",")
     np.random.shuffle(data)
     num_samples = data.shape[0]
@@ -324,9 +324,44 @@ def train_teacher_offline(num_iters, l, jumps, tag, test_train_split=0.9, epochs
     teacher.add(Dense(1, activation='linear'))
     teacher.compile(loss='mean_squared_error', optimizer='adam')
     
+    ctag = f"{tag}_l{int(l)}_j{jumps}_n{num_iters}"
     history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = batch_size, shuffle=True)
-    return history
-def train_student_given_teacher_run_sim():
+    teacher_model_fname = f"./models/teacher_{ctag}"
+    if(not os.path.isdir("./models/")):
+        os.makedirs("./models/")
+    teacher.save(teacher_model_fname)
+    return history, teacher
+def gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1):
+    # given teacher, train the student model 
+    student = Sequential()
+    student.add(InputLayer(input_shape=(feature_vec_length, )))
+    student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
+    student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+    student.add(Dense(1, activation='linear'))
+    
+    ctag = f"{tag}_l{int(l)}_j{jumps}_n{num_iters}"
+    teacher_fname = f"./models/teacher_{ctag}"
+    teacher = load_model(teacher_fname)
+    for layer in teacher.layers:
+        layer.trainable = False
+    
+    distiller = Distiller(student=student, teacher=teacher)
+    learning_rate = 1e-3
+    momentum = 0
+    opt = tf.keras.optimizers.Adam(
+        learning_rate=learning_rate,
+    )
+    distiller = Distiller(student=student, teacher=teacher)
+    distiller.compile(
+        optimizer=opt,    
+        student_loss_fn=MeanSquaredError(),
+        distillation_loss_fn=MeanSquaredError(),
+        alpha=alpha,
+        temperature=1,
+    )
+    
     return 0
 def evaluate_student_teacher_run_sim():
     return 0 
@@ -378,7 +413,7 @@ if __name__== "__main__":
     #     temperature=1,
     # )
     # teacher = gen_teacher_data_run_sim(mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
-    history = train_teacher_offline(num_iters, length_of_trial, jumps, exp_name, epochs=1000)
+    history, teacher = train_teacher_offline(num_iters, length_of_trial, jumps, exp_name, epochs=5000)
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
     plt.grid()
