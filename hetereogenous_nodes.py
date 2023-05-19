@@ -184,14 +184,15 @@ def train_teacher_offline(tag='het_test', epochs = 500, T=3):
     teacher.add(Dense(T, activation='linear'))
     teacher.compile(loss='mean_squared_error', optimizer='adam')
     
-    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 64, shuffle=True)
+    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
     return history
+
 if __name__=='__main__':
-    # gen_training_data_teacher_run_sim(num_iters=1000)
+    # gen_training_data_teacher_run_sim(num_iters=5000)
     history = train_teacher_offline(epochs = 1000)
     print(history.history.keys())
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
+    plt.plot(history.history['loss'], alpha=0.6)
+    plt.plot(history.history['val_loss'], alpha=0.8)
     plt.grid()
     # plt.ylim(0,1e-4)
     plt.yscale('log')
@@ -199,7 +200,7 @@ if __name__=='__main__':
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig("./plots/final_loss_log.png")
+    plt.savefig("./plots/final_loss_log_5000.png")
     plt.show()
 
     
