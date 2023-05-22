@@ -266,7 +266,9 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
         if(is_teacher):
             n_prediction = max_num_nodes*dict_prediction
         else:
-            n_prediction = max_num_nodes*dict_prediction["student_prediction"]
+            # print(dict_prediction)
+            # n_prediction = max_num_nodes*dict_prediction["student_prediction"]
+            n_prediction = max_num_nodes*dict_prediction
         # n_prediction = max_num_nodes*model.predict(feature_vec, verbose=-1)
         perf[0] = (n_prediction[0][0] - n_truth)/n_truth
         perf[1] = (bnb_estimate - n_truth)/n_truth
@@ -308,7 +310,8 @@ def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, featu
 def train_teacher_offline(num_iters, l, jumps, tag, test_train_split=0.9, epochs=500, batch_size=64):
     ctag = f"{tag}_l{int(l)}_j{jumps}_n{num_iters}"
     teacher_model_fname = f"./models/teacher_{ctag}"
-    if(not os.path.isdir(f"./models/{teacher_model_fname}")):
+    if(not os.path.isdir(f"{teacher_model_fname}/")):
+        print(f"No such directory = {teacher_model_fname}/")
         fname = f"./data/train_teacher_{tag}_l{int(l)}_j{jumps}_n{num_iters}.csv"
         data = np.genfromtxt(fname, delimiter=",")
         np.random.shuffle(data)
@@ -334,9 +337,11 @@ def train_teacher_offline(num_iters, l, jumps, tag, test_train_split=0.9, epochs
         if(not os.path.isdir("./models/")):
             os.makedirs("./models/")
         teacher.save(teacher_model_fname)
-        return history, teacher
+        print(f"Training loss (mean): {np.mean(history.history['loss'][-10:])}")
+        print(f"Test loss (mean): {np.mean(history.history['val_loss'][-10:])}")
+        return teacher
     else:
-        teacher = load_model(f"./models/{teacher_model_fname}")
+        teacher = load_model(f"{teacher_model_fname}")
         print(f"Model exists")
         return teacher
 def gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1):
@@ -375,47 +380,91 @@ def gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, l, jumps, ID_
     model = run_sim(mc, num_iters, l, ID_bits, distiller, ctag, split, fit_after_train=True, is_teacher=False, add_n_truth_prev=True)
     return model
 def train_student_offline(teacher, num_iters, l, jumps, tag, alpha=0.1, test_train_split=0.9, epochs=500, batch_size=64):
-    fname = f"./data/train_student_{tag}.csv"
-    data = np.genfromtxt(fname, delimiter=",")
-    np.random.shuffle(data)
-    num_samples = data.shape[0]
-    split_sample = int(split*num_samples)
-    X = data[:split_sample, :-1]
-    y = data[:split_sample, -1]
-    X_test = data[split_sample:, :-1]
-    y_test = data[split_sample:, -1]
-    y_test = np.reshape(y_test, (num_samples-split_sample, 1))
-    feature_vec_length = X.shape[1] - 1 # n_truth_prev
-    print(X.shape, y.shape)
-    print(X_test.shape, y_test.shape)
-    
-    student = Sequential()
-    student.add(InputLayer(input_shape=(feature_vec_length, )))
-    student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
-    student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(1, activation='linear'))
-    
-    distiller = Distiller(student=student, teacher=teacher)
-    learning_rate = 1e-3
-    momentum = 0
-    opt = tf.keras.optimizers.Adam(
-        learning_rate=learning_rate,
-    )
-    distiller = Distiller(student=student, teacher=teacher)
-    distiller.compile(
-        optimizer=opt,    
-        student_loss_fn=MeanSquaredError(),
-        distillation_loss_fn=MeanSquaredError(),
-        alpha=alpha,
-        temperature=1,
-    )
-    print(f"Distiller built")
-    history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = batch_size, shuffle=True)
-    return history
-def evaluate_student_teacher_run_sim():
-    return 0 
+    student_model_fname = f"./models/student_{tag}"
+    if(not os.path.isdir(student_model_fname+"/")):
+        print(f"No such file {student_model_fname}/")
+        fname = f"./data/train_student_{tag}.csv"
+        data = np.genfromtxt(fname, delimiter=",")
+        np.random.shuffle(data)
+        num_samples = data.shape[0]
+        split_sample = int(split*num_samples)
+        X = data[:split_sample, :-1]
+        y = data[:split_sample, -1]
+        X_test = data[split_sample:, :-1]
+        y_test = data[split_sample:, -1]
+        y_test = np.reshape(y_test, (num_samples-split_sample, 1))
+        feature_vec_length = X.shape[1] - 1 # n_truth_prev
+        print(X.shape, y.shape)
+        print(X_test.shape, y_test.shape)
+        
+        student = Sequential()
+        student.add(InputLayer(input_shape=(feature_vec_length, )))
+        student.add(Lambda(student_info, output_shape = (feature_vec_length, )))
+        student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+        student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        student.add(Dense(1, activation='linear'))
+        
+        distiller = Distiller(student=student, teacher=teacher)
+        learning_rate = 1e-3
+        momentum = 0
+        opt = tf.keras.optimizers.Adam(
+            learning_rate=learning_rate,
+        )
+        distiller = Distiller(student=student, teacher=teacher)
+        distiller.compile(
+            optimizer=opt,    
+            student_loss_fn=MeanSquaredError(),
+            distillation_loss_fn=MeanSquaredError(),
+            alpha=alpha,
+            temperature=1,
+        )
+        print(f"Distiller built")
+        history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = batch_size, shuffle=True)
+        print(f"Training loss (mean): {np.mean(history.history['student_loss'][-10:]):.3e}")
+        print(f"Test loss (mean): {np.mean(history.history['val_student_loss'][-10:]):.3e}")
+        distiller.student.save(student_model_fname)
+        student = distiller.student
+    else:
+        student = load_model(student_model_fname)
+        print(f"Student model exists")
+    return student
+def evaluate_student_run_sim(student, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 2):
+    # evaluates the performance of the student 
+    print(f"Evaluating student's performance")
+    ctag = f"student_{tag}"
+    if(os.path.exists(f"./data/perf_{ctag}.csv")):
+        os.remove(f"./data/perf_{ctag}.csv")
+    model = run_sim(mc, num_iters, l, ID_bits, student, ctag, split, fit_after_train=False, is_teacher=False, add_n_truth_prev=False, store_train=False, seed=seed)
+    perf = np.genfromtxt(f"./data/perf_{ctag}.csv", delimiter=',')
+    return perf
+def plot_perf(perf, is_mse=True, max_num_nodes = max_num_nodes):
+    nn_prediction = (perf[:,0]*perf[:,2]+perf[:,2])/max_num_nodes
+    bnb_prediction = (perf[:,1]*perf[:,2]+perf[:,2])/max_num_nodes
+    truth = perf[:,2]/max_num_nodes
+    if(is_mse):
+        #  MSE
+        nn_vec = (nn_prediction - truth)**2
+        bnb_vec = (bnb_prediction - truth)**2
+        nn_tag = "NN MSE"
+        bnb_tag = "BnB MSE"
+        ylabel = "mean squared error (normalized)"
+    else:
+        # relative error
+        nn_vec = perf[:,0]
+        bnb_vec = perf[:,1]
+        nn_tag = "NN rel. error"
+        bnb_tag = "BnB rel. error"
+        ylabel = "relative error"
+    plt.figure()
+    plt.plot(nn_vec, 'b', label=nn_tag,)
+    plt.plot(bnb_vec, 'r', label=bnb_tag, alpha=0.8)
+    plt.legend()
+    plt.grid()
+    plt.xlabel("Timeslots")
+    plt.ylabel(ylabel)
+    plt.show()
+    return nn_vec, bnb_vec, truth
 if __name__== "__main__":
     exp_name = "reform-end-to-end"
     tag = f"{exp_name}_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
@@ -428,34 +477,37 @@ if __name__== "__main__":
     tpm = np.linalg.matrix_power(tpm, jumps)
     mc = pydtmc.MarkovChain(tpm, states)
     ctag = tag
-    if(os.path.exists(f"./data/perf_{ctag}.csv")):
-        os.remove(f"./data/perf_{ctag}.csv")
+    
     if(os.path.exists(f"./data/decay_{ctag}.csv")):
         os.remove(f"./data/decay_{ctag}.csv")
 
-    teacher = gen_teacher_data_run_sim(mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
-    history, teacher = train_teacher_offline(num_iters, length_of_trial, jumps, exp_name, epochs=500)
-    plt.plot(history.history['loss'], alpha=0.6)
-    plt.plot(history.history['val_loss'], alpha=0.8)
-    plt.grid()
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.yscale('log')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig(f"./plots/train_teacher_{ctag}.png")
+    # teacher = gen_teacher_data_run_sim(mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
+    teacher = train_teacher_offline(num_iters, length_of_trial, jumps, exp_name, epochs=500)
+    # plt.plot(history.history['loss'], alpha=0.6)
+    # plt.plot(history.history['val_loss'], alpha=0.8)
+    # plt.grid()
+    # plt.title('model loss')
+    # plt.ylabel('loss')
+    # plt.xlabel('epoch')
+    # plt.yscale('log')
+    # plt.legend(['train', 'test'], loc='upper left')
+    # plt.savefig(f"./plots/train_teacher_{ctag}.png")
     
-    model = gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
-    history = train_student_offline(teacher, num_iters, length_of_trial, jumps, tag, alpha=0.1, test_train_split=0.9, epochs=500, batch_size=64)
-    plt.figure()
-    plt.plot(history.history['student_loss'], alpha=0.6)
-    plt.plot(history.history['val_student_loss'], alpha=0.8)
-    plt.grid()
-    plt.title('student loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.yscale('log')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig(f"./plots/train_student_{ctag}.png")
+    # model = gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
+    student = train_student_offline(teacher, num_iters, length_of_trial, jumps, tag, alpha=0.1, test_train_split=0.9, epochs=500, batch_size=64)
+    perf = evaluate_student_run_sim(student, mc, num_iters, length_of_trial, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 2)
+    
+    perf = np.genfromtxt(f"./data/perf_student_{tag}.csv", delimiter=",")
+    plot_perf(perf, is_mse=False)
+    # plt.figure()
+    # plt.plot(history.history['student_loss'], alpha=0.6)
+    # plt.plot(history.history['val_student_loss'], alpha=0.8)
+    # plt.grid()
+    # plt.title('student loss')
+    # plt.ylabel('loss')
+    # plt.xlabel('epoch')
+    # plt.yscale('log')
+    # plt.legend(['train', 'test'], loc='upper left')
+    # plt.savefig(f"./plots/train_student_{ctag}.png")
     
     
