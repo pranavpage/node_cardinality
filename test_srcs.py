@@ -1,5 +1,6 @@
 import numpy as np
 import pydtmc
+import pandas as pd
 import matplotlib.pyplot as plt 
 import os 
 import csv
@@ -214,8 +215,10 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
     # runs a full length simulation of evolving node cardinalities
     # first run LoF to get started 
     # LoF with l = log2(max_num_nodes) slots
+    rng = np.random.default_rng(seed=seed)
     perf = np.zeros(3)
     decay_perf = np.zeros(3)
+    curr_state = rng.integers(min_active_nodes, max_num_nodes)
     steps = mc.simulate(num_iters, curr_state, seed=seed)
     feature_vec_length = l+2+(add_n_truth_prev)
     for i in range(num_iters):
@@ -267,8 +270,8 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
             n_prediction = max_num_nodes*dict_prediction
         else:
             # print(dict_prediction)
-            # n_prediction = max_num_nodes*dict_prediction["student_prediction"]
-            n_prediction = max_num_nodes*dict_prediction
+            n_prediction = max_num_nodes*dict_prediction["student_prediction"]
+            # n_prediction = max_num_nodes*dict_prediction
         # n_prediction = max_num_nodes*model.predict(feature_vec, verbose=-1)
         perf[0] = (n_prediction[0][0] - n_truth)/n_truth
         perf[1] = (bnb_estimate - n_truth)/n_truth
@@ -432,13 +435,13 @@ def train_student_offline(teacher, num_iters, l, jumps, tag, alpha=0.1, test_tra
 def evaluate_student_run_sim(student, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 2):
     # evaluates the performance of the student 
     print(f"Evaluating student's performance")
-    ctag = f"student_{tag}"
+    ctag = f"student_{tag}_s{seed}"
     if(os.path.exists(f"./data/perf_{ctag}.csv")):
         os.remove(f"./data/perf_{ctag}.csv")
-    model = run_sim(mc, num_iters, l, ID_bits, student, ctag, split, fit_after_train=False, is_teacher=False, add_n_truth_prev=False, store_train=False, seed=seed)
+    model = run_sim(mc, num_iters, l, ID_bits, student, ctag, split, fit_after_train=False, is_teacher=True, add_n_truth_prev=False, store_train=False, seed=seed)
     perf = np.genfromtxt(f"./data/perf_{ctag}.csv", delimiter=',')
     return perf
-def plot_perf(perf, is_mse=True, max_num_nodes = max_num_nodes):
+def plot_perf(perf, tag, is_mse=True, max_num_nodes = max_num_nodes):
     nn_prediction = (perf[:,0]*perf[:,2]+perf[:,2])/max_num_nodes
     bnb_prediction = (perf[:,1]*perf[:,2]+perf[:,2])/max_num_nodes
     truth = perf[:,2]/max_num_nodes
@@ -449,6 +452,7 @@ def plot_perf(perf, is_mse=True, max_num_nodes = max_num_nodes):
         nn_tag = "NN MSE"
         bnb_tag = "BnB MSE"
         ylabel = "mean squared error (normalized)"
+        col_name = "mse"
     else:
         # relative error
         nn_vec = perf[:,0]
@@ -456,15 +460,25 @@ def plot_perf(perf, is_mse=True, max_num_nodes = max_num_nodes):
         nn_tag = "NN rel. error"
         bnb_tag = "BnB rel. error"
         ylabel = "relative error"
+        col_name = "rel"
+    fname=f"{col_name}_{tag}.png"
+    nn_mean = np.mean(nn_vec)
+    bnb_mean = np.mean(bnb_vec)
+    nn_std = np.std(nn_vec)
+    bnb_std = np.std(bnb_vec)
+    res = [nn_mean, nn_std, bnb_mean, bnb_std]
     plt.figure()
-    plt.plot(nn_vec, 'b', label=nn_tag,)
-    plt.plot(bnb_vec, 'r', label=bnb_tag, alpha=0.8)
+    plt.plot(nn_vec[:200], '-b', label=nn_tag,)
+    plt.plot(bnb_vec[:200], '--r', label=bnb_tag, alpha=0.8)
     plt.legend()
     plt.grid()
+    if(is_mse):
+        plt.yscale('log')
     plt.xlabel("Timeslots")
     plt.ylabel(ylabel)
-    plt.show()
-    return nn_vec, bnb_vec, truth
+    plt.title(f"Avg {nn_tag}={nn_mean:.2e}, stddev = {nn_std:.2e} \n Avg {bnb_tag}={bnb_mean:.2e}, stddev = {bnb_std:.2e} ")
+    plt.savefig(f"./plots/{fname}")
+    return np.array(res).reshape(1,4)
 if __name__== "__main__":
     exp_name = "reform-end-to-end"
     tag = f"{exp_name}_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
@@ -495,10 +509,17 @@ if __name__== "__main__":
     
     # model = gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
     student = train_student_offline(teacher, num_iters, length_of_trial, jumps, tag, alpha=0.1, test_train_split=0.9, epochs=500, batch_size=64)
-    perf = evaluate_student_run_sim(student, mc, num_iters, length_of_trial, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 2)
-    
-    perf = np.genfromtxt(f"./data/perf_student_{tag}.csv", delimiter=",")
-    plot_perf(perf, is_mse=False)
+    eval_arr = np.zeros((1,4))
+    for i in range(num_eval_runs):
+        seed = i
+        # perf = evaluate_student_run_sim(student, mc, num_test_iters, length_of_trial, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = seed)
+        perf = np.genfromtxt(f"./data/perf_student_{tag}_s{seed}.csv", delimiter=",")
+        res = plot_perf(perf, f"student_{ctag}_s{seed}", is_mse=True)
+        eval_arr = np.append(eval_arr, res, axis=0)
+        print(f"Seed {seed} done")
+    eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "NN_std", "BnB_mean", "BnB_std"])
+    eval_df.drop(0, inplace=True)
+    # eval_df.to_csv(f"./data/eval_student_{tag}.csv", index=False)
     # plt.figure()
     # plt.plot(history.history['student_loss'], alpha=0.6)
     # plt.plot(history.history['val_student_loss'], alpha=0.8)
