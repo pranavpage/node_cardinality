@@ -480,7 +480,7 @@ def plot_perf(perf, tag, is_mse=True, max_num_nodes = max_num_nodes):
     plt.savefig(f"./plots/{fname}")
     return np.array(res).reshape(1,4)
 if __name__== "__main__":
-    exp_name = "reform-end-to-end"
+    exp_name = "exp1"
     tag = f"{exp_name}_l{int(length_of_trial)}_j{jumps}_n{num_iters}"
     states = [str(i) for i in range(min_active_nodes, max_num_nodes)]
     # eps = 0.1
@@ -510,16 +510,22 @@ if __name__== "__main__":
     # model = gen_student_data_given_teacher_run_sim(teacher, mc, num_iters, length_of_trial,jumps, ID_bits, exp_name, 0.9)
     student = train_student_offline(teacher, num_iters, length_of_trial, jumps, tag, alpha=0.1, test_train_split=0.9, epochs=500, batch_size=64)
     eval_arr = np.zeros((1,4))
+    jumps_arr = np.array([5, 10, 20, 50])
+    jumps_test = 150
+    tpm = gen_transition_matrix(max_num_nodes - min_active_nodes, p, q)
+    tpm = np.linalg.matrix_power(tpm, jumps_test)
+    mc = pydtmc.MarkovChain(tpm, states)
+    jumps_tag = f"jumps_try_j{jumps_test}_og_j{jumps}"
     for i in range(num_eval_runs):
-        seed = i
-        # perf = evaluate_student_run_sim(student, mc, num_test_iters, length_of_trial, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = seed)
-        perf = np.genfromtxt(f"./data/perf_student_{tag}_s{seed}.csv", delimiter=",")
-        res = plot_perf(perf, f"student_{ctag}_s{seed}", is_mse=True)
+        seed = 10+i
+        perf = evaluate_student_run_sim(student, mc, num_test_iters, length_of_trial, jumps, ID_bits, jumps_tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = seed)
+        perf = np.genfromtxt(f"./data/perf_student_{jumps_tag}_s{seed}.csv", delimiter=",")
+        res = plot_perf(perf, f"student_{jumps_tag}_s{seed}", is_mse=True)
         eval_arr = np.append(eval_arr, res, axis=0)
         print(f"Seed {seed} done")
     eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "NN_std", "BnB_mean", "BnB_std"])
     eval_df.drop(0, inplace=True)
-    # eval_df.to_csv(f"./data/eval_student_{tag}.csv", index=False)
+    eval_df.to_csv(f"./data/eval_student_{jumps_tag}.csv", index=False)
     # plt.figure()
     # plt.plot(history.history['student_loss'], alpha=0.6)
     # plt.plot(history.history['val_student_loss'], alpha=0.8)
