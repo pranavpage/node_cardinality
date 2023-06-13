@@ -10,5 +10,6 @@ split = 0.9
 length_of_trial = 50
 feature_vec_length = length_of_trial+2
 curr_state = str(int(max_num_nodes/2))
+num_lof = 5
 ID_bits = 8
 num_eval_runs = 3
