@@ -199,9 +199,9 @@ def srcs(n, l=length_of_trial, num_lof=num_lof):
     # print(f"SRCs estimate with {l:d} slots = {srcs_estimate:.2f}")
     return srcs_estimate
 
-def normalize_feature_vec(bm, nhat, bnb_estimate):
+def normalize_feature_vec(bm, nhat):
     bm = np.array(bm)/(max_num_nodes/len(bm))
-    feature_vec = np.array(list(bm)+[nhat/max_num_nodes, bnb_estimate/max_num_nodes])
+    feature_vec = np.array(list(bm)+[nhat/max_num_nodes])
     # feature_vec = np.array(list(bm))
     return feature_vec
 def student_info(feature_vec):
@@ -260,7 +260,7 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
         bnb_estimate = est_balls_and_bins(bnb_bm, p_participate)
         srcs_estimate = srcs(n_truth, l, num_lof)
         # train NN with bnb_bm, nhat, l, n_bnb to predict n_truth
-        feature_vec = normalize_feature_vec(bnb_bm, nhat, bnb_estimate)
+        feature_vec = normalize_feature_vec(bnb_bm, nhat)
         if(add_n_truth_prev):
             feature_vec = np.append(feature_vec, n_truth_prev/max_num_nodes)
         data_vec = np.append(feature_vec, n_truth/max_num_nodes)
@@ -313,7 +313,7 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
     return model
 def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, feature_vec_length = feature_vec_length, seed = 0, add_n_truth_prev=True):
     # runs naive teacher model to generate data
-    feature_vec_length = l+2+(add_n_truth_prev)
+    feature_vec_length = l+1+(add_n_truth_prev)
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
