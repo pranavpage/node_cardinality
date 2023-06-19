@@ -131,11 +131,10 @@ class Distiller(Model):
         x_student, x_teacher = split_data(data)
         return ({"student_prediction": self.student(x_student, training=False)})
 
-def sim_balls_and_bins(n, p_participate, l, seed = 0):
+def sim_balls_and_bins(n, p_participate, l):
     # simulate a balls-and-bins trial of length l, with probability p_participate with n nodes
     # with p_participate, nodes take part in balls-and-bins trial 
     # choose uniformly from l slots
-    np.random.seed(seed)
     prob = np.random.rand(n)
     trial_list = [[] for i in range(l)]
     participating_nodes = [i for i in range(n) if prob[i]<p_participate]
@@ -166,9 +165,9 @@ def geometric_hash(ID, l):
     if(ret_hash==-1):
         ret_hash = l-1
     return ret_hash
-def sim_lottery_frame(n, l, seed = 0):
+def sim_lottery_frame(n, l):
     # l = log2(max_num_nodes)
-    np.random.seed(seed)
+    # np.random.seed(seed)
     ID_list = np.random.choice(2**l, n, replace=False)
     slot_list = [geometric_hash(i, l) for i in ID_list]
     trial_arr = [slot_list.count(i) for i in range(l)]
@@ -182,9 +181,27 @@ def est_lottery_frame(trial_arr):
             R = i
             break
     return int(1.2897*(2**(R)))
-def normalize_feature_vec(bm, nhat, bnb_estimate):
+def srcs(n, l=length_of_trial, num_lof=num_lof):
+    # conduct num_lof Lottery Frames, then balls-and-bins
+    lof_est_arr = []
+    # print(f"True value = {n:d}")
+    for i in range(num_lof):
+        trial_arr = sim_lottery_frame(n, ID_bits)
+        est_lof = est_lottery_frame(trial_arr)
+        # print(f"Actual = {n}, LoF estimate = {est_lof}")
+        lof_est_arr+=[est_lof]
+    lof_est_arr = np.array(lof_est_arr)
+    n_lof_est = np.mean(lof_est_arr)
+    # print(f"Average LoF estimate after {num_lof} trials = {n_lof_est:.2f}")
+    p_participate = min(1, 1.6*l/n_lof_est)
+    trial_arr = sim_balls_and_bins(n, p_participate, l)
+    srcs_estimate = est_balls_and_bins(trial_arr, p_participate)
+    # print(f"SRCs estimate with {l:d} slots = {srcs_estimate:.2f}")
+    return srcs_estimate
+
+def normalize_feature_vec(bm, nhat):
     bm = np.array(bm)/(max_num_nodes/len(bm))
-    feature_vec = np.array(list(bm)+[nhat/max_num_nodes, bnb_estimate/max_num_nodes])
+    feature_vec = np.array(list(bm)+[nhat/max_num_nodes])
     # feature_vec = np.array(list(bm))
     return feature_vec
 def student_info(feature_vec):
@@ -241,8 +258,9 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
         # Run balls-and-bins for current slot
         bnb_bm = sim_balls_and_bins(n_truth, p_participate, l, seed=i)
         bnb_estimate = est_balls_and_bins(bnb_bm, p_participate)
+        srcs_estimate = srcs(n_truth, l, num_lof)
         # train NN with bnb_bm, nhat, l, n_bnb to predict n_truth
-        feature_vec = normalize_feature_vec(bnb_bm, nhat, bnb_estimate)
+        feature_vec = normalize_feature_vec(bnb_bm, nhat)
         if(add_n_truth_prev):
             feature_vec = np.append(feature_vec, n_truth_prev/max_num_nodes)
         data_vec = np.append(feature_vec, n_truth/max_num_nodes)
@@ -295,7 +313,7 @@ def run_sim(mc, num_iters, l, ID_bits, model, tag, split, curr_state=curr_state,
     return model
 def gen_teacher_data_run_sim(mc, num_iters, l, jumps, ID_bits, tag, split, feature_vec_length = feature_vec_length, seed = 0, add_n_truth_prev=True):
     # runs naive teacher model to generate data
-    feature_vec_length = l+2+(add_n_truth_prev)
+    feature_vec_length = l+1+(add_n_truth_prev)
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
