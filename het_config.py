@@ -1,4 +1,4 @@
-num_iters = 1000 
+num_iters = 10000 
 l = 30
 T=3
 n_max = 2**6

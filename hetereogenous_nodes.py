@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt 
-import pydtmc, csv
+import pydtmc, csv, os
 import tensorflow as tf
 from het_config import *
 from tensorflow.keras.models import Sequential, load_model
@@ -229,188 +229,210 @@ def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6], estimates=[4,2,3], 
     return feature_vector_student, feature_vector_teacher
 
 def gen_training_data_teacher_run_sim(tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max, n_min = n_min,  jumps = jumps, q=q, seeds=[0,1,2]):
-    steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
-    estimates = steps[:, 0]
-    print(f"estimates {estimates}")
-    prev_truths = steps[:,0]
-    
-    feature_vec_length = teacher_len
-    teacher = Sequential()
-    teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    teacher.add(Dense(T, activation='linear'))
-    teacher.compile(loss='mean_squared_error', optimizer='adam')
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
-    for i in range(num_iters):
-        nodes = steps[:,i]
-        fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
-        target = fv_teacher[-T:]
-        X_teacher = fv_teacher[:-T]
-        X_teacher = X_teacher.reshape(1, X_teacher.shape[0])
-        # print(f"X_teacher shape = {X_teacher.shape}")
-        prediction = teacher.predict(X_teacher, verbose = -1)
-        print(f"i={i}, pred={prediction}, target={target}")
-        estimates = prediction[0]
-        prev_truths = nodes
-        y_teacher = target.reshape((1, T))
-        teacher.fit(X_teacher, y_teacher, verbose=-1)
-        with open(fname, 'a') as f:
-            writer=csv.writer(f)
-            writer.writerow(fv_teacher)
+    if(not os.path.isfile(fname)):
+        steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+        estimates = steps[:, 0]
+        print(f"estimates {estimates}")
+        prev_truths = steps[:,0]
+        
+        feature_vec_length = teacher_len
+        teacher = Sequential()
+        teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+        teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        teacher.add(Dense(T, activation='linear'))
+        teacher.compile(loss='mean_squared_error', optimizer='adam')
+        
+        for i in range(num_iters):
+            nodes = steps[:,i]
+            fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
+            target = fv_teacher[-T:]
+            X_teacher = fv_teacher[:-T]
+            X_teacher = X_teacher.reshape(1, X_teacher.shape[0])
+            # print(f"X_teacher shape = {X_teacher.shape}")
+            prediction = teacher.predict(X_teacher, verbose = -1)
+            print(f"i={i}, pred={prediction}, target={target}")
+            estimates = prediction[0]
+            prev_truths = nodes
+            y_teacher = target.reshape((1, T))
+            teacher.fit(X_teacher, y_teacher, verbose=-1)
+            with open(fname, 'a') as f:
+                writer=csv.writer(f)
+                writer.writerow(fv_teacher)
+    else:
+        print(f"Teacher training data already exists \n")
     return
 def train_teacher_offline(tag='het_test', epochs = 500, T=3):
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
-    fname = f"./data/{ctag}.csv"
-    data = np.genfromtxt(fname, delimiter=',')
-    np.random.shuffle(data)
-    split = 0.9
-    num_samples = data.shape[0]
-    split_sample = int(split*num_samples)
-    print(data.shape)
-    X = data[:split_sample, :-T]
-    y = data[:split_sample, -T:]
-    X_test = data[split_sample:, :-T]
-    y_test = data[split_sample:, -T:]
-    y_test = np.reshape(y_test, (num_samples-split_sample, T))
-    
-    feature_vec_length = teacher_len
-    teacher = Sequential()
-    teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    teacher.add(Dense(T, activation='linear'))
-    teacher.compile(loss='mean_squared_error', optimizer='adam')
-    
-    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
-    plt.figure(0)
-    plt.plot(history.history['loss'], alpha=0.6)
-    plt.plot(history.history['val_loss'], alpha=0.8)
-    plt.grid()
-    # plt.ylim(0,1e-4)
-    plt.yscale('log')
-    plt.title('Heterogenous nodes : Teacher loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig("./plots/train_het_test_teacher_1.png")
-    # plt.show()
-    plt.close()
-    return teacher
+    teacher_model_fname = f"./models/teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
+    if(not os.path.isdir(f"{teacher_model_fname}/")):
+        fname = f"./data/{ctag}.csv"
+        data = np.genfromtxt(fname, delimiter=',')
+        np.random.shuffle(data)
+        split = 0.9
+        num_samples = data.shape[0]
+        split_sample = int(split*num_samples)
+        print(data.shape)
+        X = data[:split_sample, :-T]
+        y = data[:split_sample, -T:]
+        X_test = data[split_sample:, :-T]
+        y_test = data[split_sample:, -T:]
+        y_test = np.reshape(y_test, (num_samples-split_sample, T))
+        
+        feature_vec_length = teacher_len
+        teacher = Sequential()
+        teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+        teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        teacher.add(Dense(T, activation='linear'))
+        teacher.compile(loss='mean_squared_error', optimizer='adam')
+        
+        history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
+        teacher.save(teacher_model_fname)
+        plt.figure(0)
+        plt.plot(history.history['loss'], alpha=0.6)
+        plt.plot(history.history['val_loss'], alpha=0.8)
+        plt.grid()
+        # plt.ylim(0,1e-4)
+        plt.yscale('log')
+        plt.title('Heterogenous nodes : Teacher loss')
+        plt.ylabel('loss')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'test'], loc='upper left')
+        plt.savefig("./plots/train_het_test_teacher_1.png")
+        # plt.show()
+        plt.close()
+        return teacher
+    else:
+        print(f"Trained teacher already exists \n")
+        teacher = load_model(f"{teacher_model_fname}")
+        return teacher
 
 def gen_training_data_student_run_sim(teacher, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5]):
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
-    steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
-    estimates = steps[:, 0]
-    print(f"estimates {estimates}")
-    prev_truths = steps[:,0]
-    feature_vec_length = student_len
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
-    student = Sequential()
-    student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
-    student.add(Dense(T, activation='linear'))
-    student.compile(loss='mean_squared_error', optimizer='adam')
     fname = f"./data/{ctag}.csv"
-    
-    for layer in teacher.layers:
-        layer.trainable = False
-    
-    distiller = Distiller(student=student, teacher=teacher)
-    learning_rate = 1e-3
-    momentum = 0
-    opt = tf.keras.optimizers.Adam(
-        learning_rate=learning_rate,
-    )
-    distiller = Distiller(student=student, teacher=teacher)
-    distiller.compile(
-        optimizer=opt,    
-        student_loss_fn=MeanSquaredError(),
-        distillation_loss_fn=MeanSquaredError(),
-        alpha=alpha,
-        temperature=1,
-    )
-    
-    for i in range(num_iters):
-        nodes = steps[:,i]
-        if(not i):
-            estimates = np.random.randint(n_min, n_max, T)
-            prev_truths = np.random.randint(n_min, n_max, T)
-        fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
-        data_vec = np.append(fv_student[:-T], fv_teacher)
-        predict_input = data_vec[:-T]
-        predict_input = np.reshape(predict_input, (1, predict_input.shape[0]))
-        target = fv_teacher[-T:]
-        X_teacher = fv_teacher[:-T]
-        X_teacher = X_teacher.reshape(1, X_teacher.shape[0])
-        prediction = distiller.predict(predict_input, verbose = -1)
-        err = sum(((target - prediction['student_prediction'][0])**2)/T)
-        print(f"i={i}, pred1={prediction['student_prediction'][0][0]:.3f}, target1={target[0]:.3f}, err={err:.3e}", end="\r")
-        estimates = prediction['student_prediction'][0]*n_max
-        prev_truths = target*n_max
-        target = np.reshape(target, (1,T))
-        distiller.fit(predict_input, target, verbose=-1)
-        with open(fname, 'a') as f:
-            writer=csv.writer(f)
-            writer.writerow(data_vec)
+    if(not os.path.isfile(fname)):
+        steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+        estimates = steps[:, 0]
+        print(f"estimates {estimates}")
+        prev_truths = steps[:,0]
+        feature_vec_length = student_len
+        student = Sequential()
+        student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
+        student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        student.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
+        student.add(Dense(T, activation='linear'))
+        student.compile(loss='mean_squared_error', optimizer='adam')
+        
+        for layer in teacher.layers:
+            layer.trainable = False
+        
+        distiller = Distiller(student=student, teacher=teacher)
+        learning_rate = 1e-3
+        momentum = 0
+        opt = tf.keras.optimizers.Adam(
+            learning_rate=learning_rate,
+        )
+        distiller = Distiller(student=student, teacher=teacher)
+        distiller.compile(
+            optimizer=opt,    
+            student_loss_fn=MeanSquaredError(),
+            distillation_loss_fn=MeanSquaredError(),
+            alpha=alpha,
+            temperature=1,
+        )
+        
+        for i in range(num_iters):
+            nodes = steps[:,i]
+            if(not i):
+                estimates = np.random.randint(n_min, n_max, T)
+                prev_truths = np.random.randint(n_min, n_max, T)
+            fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
+            data_vec = np.append(fv_student[:-T], fv_teacher)
+            predict_input = data_vec[:-T]
+            predict_input = np.reshape(predict_input, (1, predict_input.shape[0]))
+            target = fv_teacher[-T:]
+            X_teacher = fv_teacher[:-T]
+            X_teacher = X_teacher.reshape(1, X_teacher.shape[0])
+            prediction = distiller.predict(predict_input, verbose = -1)
+            err = sum(((target - prediction['student_prediction'][0])**2)/T)
+            print(f"i={i}, pred1={prediction['student_prediction'][0][0]:.3f}, target1={target[0]:.3f}, err={err:.3e}", end="\r")
+            estimates = prediction['student_prediction'][0]*n_max
+            prev_truths = target*n_max
+            target = np.reshape(target, (1,T))
+            distiller.fit(predict_input, target, verbose=-1)
+            with open(fname, 'a') as f:
+                writer=csv.writer(f)
+                writer.writerow(data_vec)
+    else:
+        print(f"Student training data already generated \n")
     return
 def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.9, epochs=500, batch_size=16):
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
-    data = np.genfromtxt(fname, delimiter=',')
-    np.random.shuffle(data)
-    split = 0.9
-    num_samples = data.shape[0]
-    split_sample = int(split*num_samples)
-    print(data.shape)
-    X = data[:split_sample, :-T]
-    y = data[:split_sample, -T:]
-    X_test = data[split_sample:, :-T]
-    y_test = data[split_sample:, -T:]
-    y_test = np.reshape(y_test, (num_samples-split_sample, T))
-    
-    student = Sequential()
-    student.add(Dense(student_len, input_shape=(student_len, ), activation='relu'))
-    student.add(Dense(int(student_len*(0.5)), activation='sigmoid'))
-    student.add(Dense(int(student_len*(0.5)), activation='sigmoid'))
-    student.add(Dense(T, activation='linear'))
-    student.compile(loss='mean_squared_error', optimizer='adam')
-    
-    for layer in teacher.layers:
-        layer.trainable = False
-    
-    distiller = Distiller(student=student, teacher=teacher)
-    learning_rate = 1e-3
-    momentum = 0
-    opt = tf.keras.optimizers.Adam(
-        learning_rate=learning_rate,
-    )
-    distiller = Distiller(student=student, teacher=teacher)
-    distiller.compile(
-        optimizer=opt,    
-        student_loss_fn=MeanSquaredError(),
-        distillation_loss_fn=MeanSquaredError(),
-        alpha=alpha,
-        temperature=1,
-    )
-    
-    history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
-    plt.figure(1)
-    plt.plot(history.history['student_loss'], alpha=0.6)
-    plt.plot(history.history['val_student_loss'], alpha=0.8)
-    plt.grid()
-    # plt.ylim(0,1e-4)
-    plt.yscale('log')
-    plt.title('Heterogenous nodes : Student loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig("./plots/train_het_test_student_1.png")
-    plt.show()
-    return distiller.student
+    student_model_fname = f"./models/student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
+    if(not os.path.isdir(f"{student_model_fname}/")):
+        data = np.genfromtxt(fname, delimiter=',')
+        np.random.shuffle(data)
+        split = 0.9
+        num_samples = data.shape[0]
+        split_sample = int(split*num_samples)
+        print(data.shape)
+        X = data[:split_sample, :-T]
+        y = data[:split_sample, -T:]
+        X_test = data[split_sample:, :-T]
+        y_test = data[split_sample:, -T:]
+        y_test = np.reshape(y_test, (num_samples-split_sample, T))
+        
+        student = Sequential()
+        student.add(Dense(student_len, input_shape=(student_len, ), activation='relu'))
+        student.add(Dense(int(student_len*(0.5)), activation='sigmoid'))
+        student.add(Dense(int(student_len*(0.5)), activation='sigmoid'))
+        student.add(Dense(T, activation='linear'))
+        student.compile(loss='mean_squared_error', optimizer='adam')
+        
+        for layer in teacher.layers:
+            layer.trainable = False
+        
+        distiller = Distiller(student=student, teacher=teacher)
+        learning_rate = 1e-3
+        momentum = 0
+        opt = tf.keras.optimizers.Adam(
+            learning_rate=learning_rate,
+        )
+        distiller = Distiller(student=student, teacher=teacher)
+        distiller.compile(
+            optimizer=opt,    
+            student_loss_fn=MeanSquaredError(),
+            distillation_loss_fn=MeanSquaredError(),
+            alpha=alpha,
+            temperature=1,
+        )
+        
+        history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 32, shuffle=True)
+        student = distiller.student
+        student.save(student_model_fname)
+        plt.figure(1)
+        plt.plot(history.history['student_loss'], alpha=0.6)
+        plt.plot(history.history['val_student_loss'], alpha=0.8)
+        plt.grid()
+        # plt.ylim(0,1e-4)
+        plt.yscale('log')
+        plt.title('Heterogenous nodes : Student loss')
+        plt.ylabel('loss')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'test'], loc='upper left')
+        plt.savefig("./plots/train_het_test_student_1.png")
+        plt.show()
+        return distiller.student
+    else:
+        print(f"Trained student model exists \n")
+        student = load_model(student_model_fname)
+        return student
 
 def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
@@ -440,18 +462,18 @@ def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l
     return perf   
 
 if __name__=='__main__':
-    # gen_training_data_teacher_run_sim(num_iters=num_iters)
-    # teacher = train_teacher_offline(epochs = 1000)
+    gen_training_data_teacher_run_sim(num_iters=num_iters)
+    teacher = train_teacher_offline(epochs = 1000)
     
-    # gen_training_data_student_run_sim(teacher, num_iters=num_iters)
-    # student = train_student_offline(teacher, epochs = 1000)
+    gen_training_data_student_run_sim(teacher, num_iters=num_iters)
+    student = train_student_offline(teacher, epochs = 1000)
     
-    # perf = evaluate_student_run_sim(student)
-    perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
+    perf = evaluate_student_run_sim(student, num_iters=2500)
+    # perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
     plt.plot(perf[:, 0])
-    plt.title("Het nodes student performance (MSE)")
+    plt.title(f"Het nodes student performance (MSE) \n Average MSE = {np.mean(perf[:,0]):.3e}")
     plt.xlabel("slots")
     plt.ylabel("error")
     plt.grid()
-    plt.savefig(f"./plots/perf_student_het_test.png")
+    plt.savefig(f"./plots/perf_student_het_test_final_2.png")
     plt.show()
