@@ -19,7 +19,73 @@ class symbol:
             return symbol(self.val)
         else:
             return symbol("c")
-        
+def sim_balls_and_bins(n, p_participate, l):
+    # simulate a balls-and-bins trial of length l, with probability p_participate with n nodes
+    # with p_participate, nodes take part in balls-and-bins trial 
+    # choose uniformly from l slots
+    prob = np.random.rand(n)
+    trial_list = [[] for i in range(l)]
+    participating_nodes = [i for i in range(n) if prob[i]<p_participate]
+    # print(f"Participating nodes : {participating_nodes}")
+    choices = np.random.randint(low=0, high=l, size=len(participating_nodes))
+    for i in range(len(participating_nodes)):
+        trial_list[choices[i]].append(participating_nodes[i])
+    trial_arr = np.array([len(elem) for elem in trial_list])
+    return trial_arr
+def est_balls_and_bins(trial_arr,p_participate):
+    # estimates the number of nodes using number of empty slots
+    l = len(trial_arr)
+    z = np.sum((trial_arr==0))
+    # print(f"Number of empty slots = {z}")
+    if(z):
+        return np.log(z/l)/(np.log(1-p_participate/l))
+    else:
+        print("z=0")
+        return n_max
+def geometric_hash(ID, l):
+    # l bit nmber ID
+    str = format(ID, f'0{l}b')
+    ret_hash = -1
+    for i in range(l):
+        if(str[l-1-i]=='0'):
+            ret_hash = i
+            break
+    if(ret_hash==-1):
+        ret_hash = l-1
+    return ret_hash
+def sim_lottery_frame(n, l):
+    # l = log2(max_num_nodes)
+    # np.random.seed(seed)
+    ID_list = np.random.choice(2**l, n, replace=False)
+    slot_list = [geometric_hash(i, l) for i in ID_list]
+    trial_arr = [slot_list.count(i) for i in range(l)]
+    return trial_arr
+def est_lottery_frame(trial_arr):
+    # R = position of rightmost zero in bitmap
+    l = len(trial_arr)
+    R = l-1
+    for i in range(l):
+        if(trial_arr[i]==0):
+            R = i
+            break
+    return int(1.2897*(2**(R)))
+def srcs(n, l=l, num_lof=num_lof):
+    # conduct num_lof Lottery Frames, then balls-and-bins
+    lof_est_arr = []
+    # print(f"True value = {n:d}")
+    for i in range(num_lof):
+        trial_arr = sim_lottery_frame(n, ID_bits)
+        est_lof = est_lottery_frame(trial_arr)
+        # print(f"Actual = {n}, LoF estimate = {est_lof}")
+        lof_est_arr+=[est_lof]
+    lof_est_arr = np.array(lof_est_arr)
+    n_lof_est = np.mean(lof_est_arr)
+    # print(f"Average LoF estimate after {num_lof} trials = {n_lof_est:.2f}")
+    p_participate = min(1, 1.6*l/n_lof_est)
+    trial_arr = sim_balls_and_bins(n, p_participate, l)
+    srcs_estimate = est_balls_and_bins(trial_arr, p_participate)
+    # print(f"SRCs estimate with {l:d} slots = {srcs_estimate:.2f}")
+    return srcs_estimate        
 def split_data(data, student_len=student_len, teacher_len=teacher_len):
     x_student = data[:, :student_len]
     x_teacher = data[:, student_len:]
@@ -436,11 +502,15 @@ def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.
 
 def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
-    perf = np.zeros((num_iters, T+1))
+    perf = np.zeros((num_iters, T+2))
     ctag = f"perf_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
+    if(os.path.isfile(fname)):
+        os.remove(fname)
     for i in range(num_iters):
         nodes = steps[:,i]
+        # T times SRCs
+        srcs_estimates = np.array([srcs(nodes[b], l=srcs_l) for b in range(T)])/n_max
         if(not i):
             estimates = np.random.randint(n_min, n_max, T)
             prev_truths = np.random.randint(n_min, n_max, T)
@@ -450,11 +520,13 @@ def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l
         target = fv_student[-T:]
         prediction = student.predict(predict_input, verbose = -1)
         err = sum(((target - prediction[0])**2)/T)
+        srcs_err = sum(((target - srcs_estimates)**2)/T)
         estimates = prediction[0]*n_max
         prev_truths = target*n_max
-        print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}", end="\r")
+        print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}, srcs_err={srcs_err:.3e}", end="\r")
         perf[i,0] = err
-        perf[i, 1:] = target
+        perf[i,1] = srcs_err
+        perf[i, 2:] = target
         perf_row = perf[i, :]
         with open(fname, 'a') as f:
             writer=csv.writer(f)
@@ -468,12 +540,14 @@ if __name__=='__main__':
     gen_training_data_student_run_sim(teacher, num_iters=num_iters)
     student = train_student_offline(teacher, epochs = 1000)
     
-    perf = evaluate_student_run_sim(student, num_iters=2500)
+    perf = evaluate_student_run_sim(student, num_iters=250)
     # perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
-    plt.plot(perf[:, 0])
-    plt.title(f"Het nodes student performance (MSE) \n Average MSE = {np.mean(perf[:,0]):.3e}")
+    plt.plot(perf[:, 0], '-b',label = "NN")
+    plt.plot(perf[:, 1], '--r',label = "SRCs")
+    plt.title(f"Het nodes student performance (MSE) \n Avg NN MSE = {np.mean(perf[:,0]):.3e}, Avg SRCs MSE = {np.mean(perf[:,1]):.3e}")
     plt.xlabel("slots")
     plt.ylabel("error")
     plt.grid()
+    plt.legend()
     plt.savefig(f"./plots/perf_student_het_test_final_2.png")
     plt.show()
