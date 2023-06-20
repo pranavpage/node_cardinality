@@ -2,9 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import pydtmc, csv
 import tensorflow as tf
-import config
+from het_config import *
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense, Layer, Lambda, InputLayer
+from tensorflow.keras.losses import MeanSquaredError
+from tensorflow.keras import Model
 
 class symbol:
     def __init__(self, val) -> None:
@@ -134,7 +136,7 @@ def gen_transition_matrix(n, p, q):
         tpm.append(row)
     return tpm
 
-def get_steps(num_iters = 100, l = 10, T=4 ,  n_max = 2**8,n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
+def get_steps(num_iters = 100, l = 10, T=4 ,  n_max = 2**8, n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
     # simulates T types of nodes with 
     states = [str(i) for i in range(n_min, n_max)]
     p=(1-q)/2
@@ -157,7 +159,7 @@ def sim_2_ss_bb(l=10, nodes=[6, 6, 6, 6], estimates = [4, 2, 3, 4]):
     # There are (T/2) slots in every block if T is even else (T-1/2) slots 
     # for each node, a block is chosen uniformly at random
     num_slot = T//2 if T%2==0 else (T-1)//2
-    print(num_slot) 
+    # print(num_slot) 
     num_nodes_in_blocks = np.zeros((l, T))
     for b in range(T):
         # Type b nodes
@@ -184,9 +186,6 @@ def gen_pattern_2_ss_bb(num_nodes_in_blocks, estimates):
     alpha = np.array([symbol('0') for i in range(0, T//2)])
     beta = np.array([symbol('0') for i in range(0, T//2)])
     lcol = np.array([symbol('0') for i in range(0, T//2)])
-    print(type(bit_pattern))
-    print(alpha)
-    print(type(alpha))
     M = []
     for i in range(0,T//2):
         alpha[i] = 'a'
@@ -213,6 +212,7 @@ def gen_pattern_2_ss_bb(num_nodes_in_blocks, estimates):
                     bit_pattern[block]+=M[b]
                 elif(no_of_nodes%2 != 0):
                     bit_pattern[block]+=M[-1]
+    print(f"Bit Pattern: {bit_pattern}")
     return bit_pattern_to_string(bit_pattern)
 
 
@@ -228,17 +228,17 @@ def bit_pattern_to_onehot(bit_p: np.ndarray)->np.ndarray:
     T = bit_p.shape[1]+1
     #l, T obtained
     bit_p_flattened = bit_p.flatten()
-    # print(f"Flattened vector = {bit_p_flattened}")
+    print(f"Flattened vector = {bit_p_flattened}")
     symbol_to_int = {'0':0, 'a':1, 'b':2, 'c':3}
     integer_encoded = [symbol_to_int[sym] for sym in bit_p_flattened]
-    # print(f"Integer encoded = {integer_encoded}")
+    print(f"Integer encoded = {integer_encoded}")
     onehot_encoded = []
     for val in integer_encoded:
         letter = [0]*4
         letter[val] = 1
         onehot_encoded+=letter
     onehot_encoded=np.array(onehot_encoded)
-    # print(f"Shape of onehot encoded = {onehot_encoded.shape}")
+    print(f"Shape of onehot encoded = {onehot_encoded.shape}")
     return onehot_encoded 
 
 def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,4], prev_truths=[5, 4, 2, 3]):
@@ -256,8 +256,9 @@ def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,
     # print(f"Feature vector for teacher = {feature_vector_teacher.shape}") 
     return feature_vector_student, feature_vector_teacher/n_max
 
-def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l = 10, T=4 ,  n_max = 2**8,n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
+def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l = 10, T=4 ,  n_max = 2**8, n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+    # print(steps)
     estimates = steps[:, 0]
     print(f"estimates {estimates}")
     prev_truths = steps[:,0]
@@ -288,7 +289,7 @@ def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l =
             writer.writerow(fv_teacher)
     return
 
-def train_teacher_offline(tag='het_test', epochs = 500, T=3):
+def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
     fname = f"./data/{tag}.csv"
     data = np.genfromtxt(fname, delimiter=',')
     np.random.shuffle(data)
@@ -321,15 +322,16 @@ def train_teacher_offline(tag='het_test', epochs = 500, T=3):
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig("./plots/train_het_test_teacher_1.png")
+    plt.savefig("./plots/train_het_test_2ss_teacher_1.png")
     # plt.show()
     plt.close()
     return teacher
 
-def gen_training_data_student_run_sim(teacher, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5]):
+def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5,2]):
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+    print(steps)
     estimates = steps[:, 0]
     print(f"estimates {estimates}")
     prev_truths = steps[:,0]
@@ -385,7 +387,7 @@ def gen_training_data_student_run_sim(teacher, tag = "het_test", num_iters = num
             writer.writerow(data_vec)
     return
 
-def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.9, epochs=500, batch_size=16):
+def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_split=0.9, epochs=500, batch_size=16):
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     data = np.genfromtxt(fname, delimiter=',')
@@ -436,11 +438,11 @@ def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
-    plt.savefig("./plots/train_het_test_student_1.png")
+    plt.savefig("./plots/train_het_test_2ss_student_1.png")
     plt.show()
     return distiller.student
 
-def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
+def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
     perf = np.zeros((num_iters, T+1))
     ctag = f"perf_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
@@ -469,21 +471,21 @@ def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l
 
 if __name__=='__main__':
     print("Main")
-    gen_training_data_teacher_run_sim(num_iters=num_iters)
-    history = train_teacher_offline(epochs = 1000)
+    # gen_training_data_teacher_run_sim(num_iters=num_iters)
+    teacher = train_teacher_offline(epochs = 10)
 
     gen_training_data_student_run_sim(teacher, num_iters=num_iters)
     student = train_student_offline(teacher, epochs = 1000)
 
     perf = evaluate_student_run_sim(student)
 
-    perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
+    perf = np.genfromtxt("./data/perf_student_het_test_2ss_l30_T4_j5_n1000.csv", delimiter=",")
     plt.plot(perf[:, 0])
     plt.title("Het nodes student performance (MSE)")
     plt.xlabel("slots")
     plt.ylabel("error")
     plt.grid()
-    plt.savefig(f"./plots/perf_student_het_test.png")
+    plt.savefig(f"./plots/perf_student_het_test_2ss.png")
     plt.show()
 
     # print(history.history.keys())
