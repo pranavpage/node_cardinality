@@ -188,12 +188,12 @@ def gen_pattern_2_ss_bb(num_nodes_in_blocks, estimates):
     lcol = np.array([symbol('0') for i in range(0, T//2)])
     M = []
     for i in range(0,T//2):
-        alpha[i] = 'a'
-        A = [symbol(x) for x in alpha]
+        alpha[i] = symbol('a')
+        A = [x for x in alpha]
         M.append(A)
     for i in range(0,T//2):
-        beta[-(i+1)] = 'b'
-        B = [symbol(x) for x in beta]
+        beta[-(i+1)] = symbol('b')
+        B = [x for x in beta]
         M.append(B)
     if T%2!=0:
         lcol[0] = symbol('b')
@@ -212,7 +212,7 @@ def gen_pattern_2_ss_bb(num_nodes_in_blocks, estimates):
                     bit_pattern[block]+=M[b]
                 elif(no_of_nodes%2 != 0):
                     bit_pattern[block]+=M[-1]
-    print(f"Bit Pattern: {bit_pattern}")
+    # print(f"Bit Pattern: {bit_pattern}")
     return bit_pattern_to_string(bit_pattern)
 
 
@@ -228,17 +228,17 @@ def bit_pattern_to_onehot(bit_p: np.ndarray)->np.ndarray:
     T = bit_p.shape[1]+1
     #l, T obtained
     bit_p_flattened = bit_p.flatten()
-    print(f"Flattened vector = {bit_p_flattened}")
+    # print(f"Flattened vector = {bit_p_flattened}")
     symbol_to_int = {'0':0, 'a':1, 'b':2, 'c':3}
     integer_encoded = [symbol_to_int[sym] for sym in bit_p_flattened]
-    print(f"Integer encoded = {integer_encoded}")
+    # print(f"Integer encoded = {integer_encoded}")
     onehot_encoded = []
     for val in integer_encoded:
         letter = [0]*4
         letter[val] = 1
         onehot_encoded+=letter
     onehot_encoded=np.array(onehot_encoded)
-    print(f"Shape of onehot encoded = {onehot_encoded.shape}")
+    # print(f"Shape of onehot encoded = {onehot_encoded.shape}")
     return onehot_encoded 
 
 def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,4], prev_truths=[5, 4, 2, 3]):
@@ -296,6 +296,7 @@ def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
     split = 0.9
     num_samples = data.shape[0]
     split_sample = int(split*num_samples)
+    print("Data Shape")
     print(data.shape)
     X = data[:split_sample, :-T]
     y = data[:split_sample, -T:]
@@ -331,10 +332,11 @@ def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters =
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
-    print(steps)
+    # print(steps)
     estimates = steps[:, 0]
     print(f"estimates {estimates}")
     prev_truths = steps[:,0]
+    # print(f"Student Length:{student_len}")
     feature_vec_length = student_len
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     student = Sequential()
@@ -395,7 +397,7 @@ def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_spli
     split = 0.9
     num_samples = data.shape[0]
     split_sample = int(split*num_samples)
-    print(data.shape)
+    # print(data.shape)
     X = data[:split_sample, :-T]
     y = data[:split_sample, -T:]
     X_test = data[split_sample:, :-T]
@@ -471,15 +473,16 @@ def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iter
 
 if __name__=='__main__':
     print("Main")
-    # gen_training_data_teacher_run_sim(num_iters=num_iters)
-    teacher = train_teacher_offline(epochs = 10)
+    gen_training_data_teacher_run_sim(num_iters=num_iters)
+    teacher = train_teacher_offline(epochs = 100)
 
     gen_training_data_student_run_sim(teacher, num_iters=num_iters)
-    student = train_student_offline(teacher, epochs = 1000)
+    print("DOne")
+    student = train_student_offline(teacher, epochs = 100)
 
     perf = evaluate_student_run_sim(student)
 
-    perf = np.genfromtxt("./data/perf_student_het_test_2ss_l30_T4_j5_n1000.csv", delimiter=",")
+    perf = np.genfromtxt("./data/perf_student_het_test_2ss_l30_T4_j5_n100.csv", delimiter=",")
     plt.plot(perf[:, 0])
     plt.title("Het nodes student performance (MSE)")
     plt.xlabel("slots")
