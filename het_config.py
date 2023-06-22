@@ -7,4 +7,4 @@ n_min = 2**1
 jumps = 5
 q=0.2
 student_len = (T//2)*l*4 + T 
-teacher_len = (T)*l + T 
+teacher_len = (T)*l + T
