@@ -264,6 +264,7 @@ def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l =
     prev_truths = steps[:,0]
     
     feature_vec_length = l*T+T
+    print(f"feature vector length : {feature_vec_length}")
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
@@ -305,6 +306,7 @@ def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
     y_test = np.reshape(y_test, (num_samples-split_sample, T))
     
     feature_vec_length = X.shape[1]
+    print(f"Train Feature vec length: {feature_vec_length}")
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
     teacher.add(Dense(int(feature_vec_length*(0.5)), activation='sigmoid'))
@@ -338,6 +340,7 @@ def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters =
     prev_truths = steps[:,0]
     # print(f"Student Length:{student_len}")
     feature_vec_length = student_len
+    print(f"Feature vec length : {feature_vec_length}")
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     student = Sequential()
     student.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
