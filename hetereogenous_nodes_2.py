@@ -136,7 +136,7 @@ def gen_transition_matrix(n, p, q):
         tpm.append(row)
     return tpm
 
-def get_steps(num_iters = 100, l = 10, T=4 ,  n_max = 2**8, n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
+def get_steps(num_iters = num_iters, l = l, T=T ,  n_max = 2**8, n_min = 10,  jumps = jumps, q=q, seeds=[0,1,2,3]):
     # simulates T types of nodes with 
     states = [str(i) for i in range(n_min, n_max)]
     p=(1-q)/2
@@ -256,14 +256,14 @@ def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,
     # print(f"Feature vector for teacher = {feature_vector_teacher.shape}") 
     return feature_vector_student, feature_vector_teacher/n_max
 
-def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l = 10, T=4 ,  n_max = 2**8, n_min = 10,  jumps = 5, q=0.2, seeds=[0,1,2,3]):
+def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = num_iters, l=l, T=T ,  n_max = 2**8, n_min = 10,  jumps = jumps, q=q, seeds=[0,1,2,3]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
     # print(steps)
     estimates = steps[:, 0]
     print(f"estimates {estimates}")
     prev_truths = steps[:,0]
     
-    feature_vec_length = l*T+T
+    feature_vec_length = teacher_len
     print(f"feature vector length : {feature_vec_length}")
     teacher = Sequential()
     teacher.add(Dense(feature_vec_length, input_shape=(feature_vec_length, ), activation='relu'))
@@ -290,7 +290,7 @@ def gen_training_data_teacher_run_sim(tag = "het_test_2ss", num_iters = 100, l =
             writer.writerow(fv_teacher)
     return
 
-def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
+def train_teacher_offline(tag='het_test_2ss', epochs = 1000, T=T):
     fname = f"./data/{tag}.csv"
     data = np.genfromtxt(fname, delimiter=',')
     np.random.shuffle(data)
@@ -314,7 +314,7 @@ def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
     teacher.add(Dense(T, activation='linear'))
     teacher.compile(loss='mean_squared_error', optimizer='adam')
     
-    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
+    history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = 1000, batch_size = 16, shuffle=True)
     plt.figure(0)
     plt.plot(history.history['loss'], alpha=0.6)
     plt.plot(history.history['val_loss'], alpha=0.8)
@@ -330,7 +330,7 @@ def train_teacher_offline(tag='het_test_2ss', epochs = 500, T=4):
     plt.close()
     return teacher
 
-def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5,2]):
+def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters = num_iters, l=l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5,2]):
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
@@ -392,7 +392,7 @@ def gen_training_data_student_run_sim(teacher, tag = "het_test_2ss", num_iters =
             writer.writerow(data_vec)
     return
 
-def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_split=0.9, epochs=500, batch_size=16):
+def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_split=0.9, epochs=1000, batch_size=16):
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     data = np.genfromtxt(fname, delimiter=',')
@@ -432,7 +432,7 @@ def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_spli
         temperature=1,
     )
     
-    history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
+    history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = 1000, batch_size = 16, shuffle=True)
     plt.figure(1)
     plt.plot(history.history['student_loss'], alpha=0.6)
     plt.plot(history.history['val_student_loss'], alpha=0.8)
@@ -447,7 +447,7 @@ def train_student_offline(teacher,tag="het_test_2ss", alpha=0.1, test_train_spli
     plt.show()
     return distiller.student
 
-def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
+def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iters, l=l, T=T , n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8,5]):
     steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
     perf = np.zeros((num_iters, T+1))
     ctag = f"perf_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
@@ -463,10 +463,12 @@ def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iter
         target = fv_student[-T:]
         prediction = student.predict(predict_input, verbose = -1)
         err = sum(((target - prediction[0])**2)/T)
+        norm_err = err**(1/2)
         estimates = prediction[0]*n_max
         prev_truths = target*n_max
-        print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}", end="\r")
-        perf[i,0] = err
+        print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}, norm_err={norm_err:.3e}", end="\r")
+        # perf[i,0] = err
+        perf[i,0] = norm_err
         perf[i, 1:] = target
         perf_row = perf[i, :]
         with open(fname, 'a') as f:
@@ -475,17 +477,15 @@ def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iter
     return perf  
 
 if __name__=='__main__':
-    print("Main")
-    gen_training_data_teacher_run_sim(num_iters=num_iters)
-    teacher = train_teacher_offline(epochs = 100)
+    # gen_training_data_teacher_run_sim(num_iters=num_iters)
+    teacher = train_teacher_offline(epochs = 1000)
 
-    gen_training_data_student_run_sim(teacher, num_iters=num_iters)
-    print("DOne")
-    student = train_student_offline(teacher, epochs = 100)
+    # gen_training_data_student_run_sim(teacher, num_iters=num_iters)
+    student = train_student_offline(teacher, epochs = 1000)
 
     perf = evaluate_student_run_sim(student)
 
-    perf = np.genfromtxt("./data/perf_student_het_test_2ss_l30_T4_j5_n100.csv", delimiter=",")
+    perf = np.genfromtxt("./data/perf_student_het_test_2ss_l30_T4_j5_n1000.csv", delimiter=",")
     plt.plot(perf[:, 0])
     plt.title("Het nodes student performance (MSE)")
     plt.xlabel("slots")

@@ -1,10 +1,10 @@
-# num_iters = 1000
-num_iters = 100
+num_iters = 1000
+# num_iters = 100
 l = 30
 T=4
 n_max = 2**6
 n_min = 2**1
 jumps = 5
 q=0.2
-student_len = (T//2)*l*4 + T 
+student_len = (T//2)*l*4 + T
 teacher_len = (T)*l + T
