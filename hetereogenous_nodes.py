@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt 
+import pandas as pd
 import pydtmc, csv, os
 import tensorflow as tf
 from het_config import *
@@ -294,11 +295,13 @@ def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6], estimates=[4,2,3], 
     feature_vector_teacher = np.append(feature_vector_teacher, np.array(nodes).flatten()/n_max)
     return feature_vector_student, feature_vector_teacher
 
-def gen_training_data_teacher_run_sim(tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max, n_min = n_min,  jumps = jumps, q=q, seeds=[0,1,2]):
+def gen_training_data_teacher_run_sim(tag, num_iters = num_iters, l = l, T=T ,  n_max = n_max, n_min = n_min,  jumps = jumps, q=q, seed = 0):
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
+    rng = np.random.default_rng(seed)
+    seeds = rng.integers(0, 100, T)
     if(not os.path.isfile(fname)):
-        steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+        steps = get_steps(num_iters, l, T, n_max, n_min, norm_jumps, q, seeds)
         estimates = steps[:, 0]
         print(f"estimates {estimates}")
         prev_truths = steps[:,0]
@@ -330,7 +333,7 @@ def gen_training_data_teacher_run_sim(tag = "het_test", num_iters = num_iters, l
     else:
         print(f"Teacher training data already exists \n")
     return
-def train_teacher_offline(tag='het_test', epochs = 500, T=3):
+def train_teacher_offline(tag, epochs = 500, T=T):
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     teacher_model_fname = f"./models/teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     if(not os.path.isdir(f"{teacher_model_fname}/")):
@@ -355,7 +358,7 @@ def train_teacher_offline(tag='het_test', epochs = 500, T=3):
         teacher.add(Dense(T, activation='linear'))
         teacher.compile(loss='mean_squared_error', optimizer='adam')
         
-        history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 16, shuffle=True)
+        history = teacher.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 32, shuffle=True)
         teacher.save(teacher_model_fname)
         plt.figure(0)
         plt.plot(history.history['loss'], alpha=0.6)
@@ -367,7 +370,7 @@ def train_teacher_offline(tag='het_test', epochs = 500, T=3):
         plt.ylabel('loss')
         plt.xlabel('epoch')
         plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig("./plots/train_het_test_teacher_1.png")
+        # plt.savefig("./plots/train_het_test_teacher_1.png")
         # plt.show()
         plt.close()
         return teacher
@@ -376,13 +379,15 @@ def train_teacher_offline(tag='het_test', epochs = 500, T=3):
         teacher = load_model(f"{teacher_model_fname}")
         return teacher
 
-def gen_training_data_student_run_sim(teacher, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[3,4,5]):
+def gen_training_data_student_run_sim(teacher, tag , num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=alpha, seed=75):
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
-    if(not os.path.isfile(fname)):
-        steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+    rng = np.random.default_rng(seed)
+    seeds = rng.integers(0, 100, T)
+    if((not os.path.isfile(fname))):
+        steps = get_steps(num_iters, l, T, n_max, n_min, norm_jumps, q, seeds)
         estimates = steps[:, 0]
         print(f"estimates {estimates}")
         prev_truths = steps[:,0]
@@ -437,14 +442,14 @@ def gen_training_data_student_run_sim(teacher, tag = "het_test", num_iters = num
     else:
         print(f"Student training data already generated \n")
     return
-def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.9, epochs=500, batch_size=16):
+def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs=500, batch_size=16):
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     student_model_fname = f"./models/student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
-    if(not os.path.isdir(f"{student_model_fname}/")):
+    if((not os.path.isdir(f"{student_model_fname}/"))):
         data = np.genfromtxt(fname, delimiter=',')
         np.random.shuffle(data)
-        split = 0.9
+        split = 0.95
         num_samples = data.shape[0]
         split_sample = int(split*num_samples)
         print(data.shape)
@@ -479,7 +484,7 @@ def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.
             temperature=1,
         )
         
-        history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 32, shuffle=True)
+        history = distiller.fit(X,y, validation_data=(X_test, y_test), epochs = epochs, batch_size = 50, shuffle=True, verbose=1)
         student = distiller.student
         student.save(student_model_fname)
         plt.figure(1)
@@ -493,15 +498,17 @@ def train_student_offline(teacher,tag="het_test", alpha=0.1, test_train_split=0.
         plt.xlabel('epoch')
         plt.legend(['train', 'test'], loc='upper left')
         plt.savefig("./plots/train_het_test_student_1.png")
-        plt.show()
         return distiller.student
     else:
         print(f"Trained student model exists \n")
         student = load_model(student_model_fname)
         return student
 
-def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seeds=[6,7,8]):
-    steps = get_steps(num_iters, l, T, n_max, n_min, jumps, q, seeds)
+def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seed=100):
+    rng = np.random.default_rng(seed)
+    seeds = rng.integers(0, 100, T)
+    print(f"Normalised jumps = {norm_jumps}")
+    steps = get_steps(num_iters, l, T, n_max, n_min, norm_jumps, q, seeds)
     perf = np.zeros((num_iters, T+2))
     ctag = f"perf_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
@@ -533,21 +540,37 @@ def evaluate_student_run_sim(student, tag = "het_test", num_iters = num_iters, l
             writer.writerow(perf_row)
     return perf   
 
-if __name__=='__main__':
-    gen_training_data_teacher_run_sim(num_iters=num_iters)
-    teacher = train_teacher_offline(epochs = 1000)
-    
-    gen_training_data_student_run_sim(teacher, num_iters=num_iters)
-    student = train_student_offline(teacher, epochs = 1000)
-    
-    perf = evaluate_student_run_sim(student, num_iters=250)
-    # perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
+def plot_perf(perf, tag):
+    nn_mean = np.mean(perf[:,0])
+    srcs_mean = np.mean(perf[:,1])
     plt.plot(perf[:, 0], '-b',label = "NN")
-    plt.plot(perf[:, 1], '--r',label = "SRCs")
-    plt.title(f"Het nodes student performance (MSE) \n Avg NN MSE = {np.mean(perf[:,0]):.3e}, Avg SRCs MSE = {np.mean(perf[:,1]):.3e}")
+    plt.plot(perf[:, 1], '--r',label = "T-SRCs")
+    plt.title(f"Het Nodes student performance (MSE) \n Avg NN MSE = {np.mean(perf[:,0]):.3e}, Avg T-SRCs MSE = {np.mean(perf[:,1]):.3e}")
     plt.xlabel("slots")
     plt.ylabel("error")
     plt.grid()
     plt.legend()
-    plt.savefig(f"./plots/perf_student_het_test_final_2.png")
-    plt.show()
+    plt.yscale('log')
+    plt.savefig(f"./plots/{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}.png")
+    plt.close()
+    return np.array([nn_mean, srcs_mean]).reshape((1,2))
+
+if __name__=='__main__':
+    tag = "het_type"
+    gen_training_data_teacher_run_sim(tag = tag, num_iters=num_iters)
+    teacher = train_teacher_offline(tag = tag, epochs = 400)
+    
+    gen_training_data_student_run_sim(teacher,tag = tag, num_iters=num_iters, seed=90)
+    student = train_student_offline(teacher, tag=tag, epochs = 100)
+    
+    # perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
+    eval_arr = np.zeros((1, 2))
+    for i in range(num_eval_runs):
+        print(f"Run {i+1}/{num_eval_runs} \n")
+        perf = evaluate_student_run_sim(student,tag = tag, num_iters=num_eval_iters, seed=i)
+        res = plot_perf(perf, tag=f"{tag}_s{i}")
+        eval_arr = np.append(eval_arr, res, axis=0)
+    eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "SRCs_mean"])
+    eval_df.drop(0, inplace=True)
+    eval_df.to_csv(f"./data/eval_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}.csv", index=False)
+        
