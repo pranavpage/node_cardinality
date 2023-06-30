@@ -241,7 +241,7 @@ def bit_pattern_to_onehot(bit_p: np.ndarray)->np.ndarray:
     # print(f"Shape of onehot encoded = {onehot_encoded.shape}")
     return onehot_encoded 
 
-def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,4], prev_truths=[5, 4, 2, 3]):
+def gen_feature_vectors_for_slot(n_max, l=30, nodes=[6,6,6,6], estimates=[4,2,3,4], prev_truths=[5, 4, 2, 3]):
     # given length of trial, number of nodes, previous estimates, generate a feature vector for student and teacher
     # last T elements are targets
     num_nodes_in_blocks, bit_pattern = sim_2_ss_bb(l, nodes, estimates) 
