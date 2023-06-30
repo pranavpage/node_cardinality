@@ -465,7 +465,8 @@ def evaluate_student_run_sim(student, tag = "het_test_2ss", num_iters = num_iter
         err = sum(((target - prediction[0])**2)/T)
         norm_err = err**(1/2)
         estimates = prediction[0]*n_max
-        prev_truths = target*n_max
+        # prev_truths = target*n_max
+        prev_truths = target
         print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}, norm_err={norm_err:.3e}", end="\r")
         # perf[i,0] = err
         perf[i,0] = norm_err
