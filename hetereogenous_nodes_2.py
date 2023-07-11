@@ -535,6 +535,7 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
         plt.xlabel('epoch')
         plt.legend(['train', 'test'], loc='upper left')
         plt.savefig("./plots/train_het_test_2ss_student_1.png")
+        plt.close()
         return distiller.student
     else:
         print(f"Trained student model exists \n")
@@ -601,12 +602,9 @@ if __name__=='__main__':
     student = train_student_offline(teacher, tag=tag, epochs = 200)
 
     # student = tf.keras.models.load_model("./models/student_het_type_2ss_l30_T3_j5_n20000")
-    # student = tf.saved_model.load("./models/student_het_type_2ss_l30_T4_j5_n10000")
-
     # perf = np.genfromtxt(f"./data/perf_student_het_type_2ss_l{int(l)}_T{T}_j{jumps}_n{num_iters}.csv", delimiter=",")
     eval_arr = np.zeros((1, 2))
     for i in range(num_eval_runs):
-        print("here")
         print(f"Run {i+1}/{num_eval_runs} \n")
         perf = evaluate_student_run_sim(student,tag = tag, num_iters=num_eval_iters, seed=i)
         res = plot_perf(perf, tag=f"{tag}_s{i}")

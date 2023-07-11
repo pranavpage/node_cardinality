@@ -1,15 +1,4 @@
-# num_iters = 1000
-# # num_iters = 100
-# l = 30
-# T=4
-# n_max = 2**6
-# n_min = 2**1
-# jumps = 5
-# q=0.2
-# student_len = (T//2)*l*4 + T
-# teacher_len = (T)*l + T
-
-num_iters = 10000
+num_iters = 30000
 l = 30
 T = 3
 n_max = int((2**6)*3/T)
@@ -23,6 +12,6 @@ student_len = (T//2)*l*4 + T
 teacher_len = (T)*l + T 
 num_lof = 5
 ID_bits = 8
-num_eval_runs = 10
-num_eval_iters = 500
+num_eval_runs = 20
+num_eval_iters = 2500
 alpha=0.1
