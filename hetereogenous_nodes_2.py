@@ -360,8 +360,6 @@ def gen_training_data_teacher_run_sim(tag, num_iters = num_iters, l = l, T=T ,  
             prev_truths = nodes
             y_teacher = target.reshape((1, T))
             teacher.fit(X_teacher, y_teacher, verbose=-1)
-            err = sum(((target - prediction)**2)/T)
-            print(err)
             with open(fname, 'a') as f:
                 writer=csv.writer(f)
                 writer.writerow(fv_teacher)
@@ -369,7 +367,7 @@ def gen_training_data_teacher_run_sim(tag, num_iters = num_iters, l = l, T=T ,  
         print(f"Teacher training data already exists \n")
     return
 
-def train_teacher_offline(tag, epochs = 200, T=T):
+def train_teacher_offline(tag, epochs = 500, T=T):
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     teacher_model_fname = f"./models/teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     if(not os.path.isdir(f"{teacher_model_fname}/")):
@@ -415,7 +413,7 @@ def train_teacher_offline(tag, epochs = 200, T=T):
         teacher = load_model(f"{teacher_model_fname}")
         return teacher
 
-def gen_training_data_student_run_sim(teacher, tag , num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=alpha, seed=75):
+def gen_training_data_student_run_sim(teacher, tag , num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=alpha, seed=0):
     # teacher, mc, num_iters, l, jumps, ID_bits, tag, split, alpha=0.1, feature_vec_length = feature_vec_length, seed = 1
     # given teacher, generate student training data
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
@@ -542,7 +540,7 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
         student = load_model(student_model_fname)
         return student
 
-def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seed=100):
+def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  n_max = n_max,n_min = n_min,  jumps = jumps, q=q, alpha=0.1, seed=0):
     rng = np.random.default_rng(seed)
     seeds = rng.integers(0, 100, T)
     print(f"Normalised jumps = {norm_jumps}")
@@ -596,17 +594,17 @@ def plot_perf(perf, tag):
 if __name__=='__main__':
     tag = "het_type_2ss"
     gen_training_data_teacher_run_sim(tag = tag, num_iters=num_iters)
-    teacher = train_teacher_offline(tag = tag, epochs = 200)
+    teacher = train_teacher_offline(tag = tag, epochs = 500)
     
-    gen_training_data_student_run_sim(teacher,tag = tag, num_iters=num_iters, seed=90)
-    student = train_student_offline(teacher, tag=tag, epochs = 200)
+    gen_training_data_student_run_sim(teacher,tag = tag, num_iters=num_iters, seed=0)
+    student = train_student_offline(teacher, tag=tag, epochs = 500)
 
     # student = tf.keras.models.load_model("./models/student_het_type_2ss_l30_T3_j5_n20000")
     # perf = np.genfromtxt(f"./data/perf_student_het_type_2ss_l{int(l)}_T{T}_j{jumps}_n{num_iters}.csv", delimiter=",")
     eval_arr = np.zeros((1, 2))
     for i in range(num_eval_runs):
         print(f"Run {i+1}/{num_eval_runs} \n")
-        perf = evaluate_student_run_sim(student,tag = tag, num_iters=num_eval_iters, seed=i)
+        perf = evaluate_student_run_sim(student,tag = tag, num_iters=num_eval_iters, seed=0)
         res = plot_perf(perf, tag=f"{tag}_s{i}")
         eval_arr = np.append(eval_arr, res, axis=0)
     eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "SRCs_mean"])

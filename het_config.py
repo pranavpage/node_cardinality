@@ -1,4 +1,4 @@
-num_iters = 30000
+num_iters = 20000
 l = 30
 T = 3
 n_max = int((2**6)*3/T)
