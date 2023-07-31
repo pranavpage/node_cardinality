@@ -557,6 +557,9 @@ def plot_perf(perf, tag):
 
 if __name__=='__main__':
     tag = "het_type"
+    print(f"Length of BB trial for T-SRCs = {srcs_l}\nLength of trial for 3SS = {l}")
+    print(f"num slots for T-SRCs = {T*(srcs_l + num_lof*ID_bits)} slots")
+    print(f"num slots for 3SS    = {(T-1)*l} slots")
     gen_training_data_teacher_run_sim(tag = tag, num_iters=num_iters)
     teacher = train_teacher_offline(tag = tag, epochs = 400)
     
