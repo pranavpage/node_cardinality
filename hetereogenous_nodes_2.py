@@ -1,3 +1,4 @@
+# from numba import jit, cuda
 import numpy as np
 import matplotlib.pyplot as plt 
 import pandas as pd
@@ -24,7 +25,6 @@ class symbol:
         else:
             return symbol("c")
         
-
 def sim_balls_and_bins(n, p_participate, l):
     # simulate a balls-and-bins trial of length l, with probability p_participate with n nodes
     # with p_participate, nodes take part in balls-and-bins trial 
@@ -49,7 +49,7 @@ def est_balls_and_bins(trial_arr,p_participate):
     else:
         print("z=0")
         return n_max
-    
+     
 def geometric_hash(ID, l):
     # l bit nmber ID
     str = format(ID, f'0{l}b')
@@ -97,7 +97,7 @@ def srcs(n, l=l, num_lof=num_lof):
     srcs_estimate = est_balls_and_bins(trial_arr, p_participate)
     # print(f"SRCs estimate with {l:d} slots = {srcs_estimate:.2f}")
     return srcs_estimate
-        
+     
 def split_data(data, student_len=student_len, teacher_len=teacher_len):
     x_student = data[:, :student_len]
     x_teacher = data[:, student_len:]
@@ -194,7 +194,8 @@ class Distiller(Model):
     def predict_step(self, data):
         x_student, x_teacher = split_data(data)
         return ({"student_prediction": self.student(x_student, training=False)})
-    
+
+  
 def gen_transition_matrix(n, p, q):
     # generate TPM for n states
     tpm = []
@@ -316,7 +317,6 @@ def bit_pattern_to_onehot(bit_p: np.ndarray)->np.ndarray:
     onehot_encoded=np.array(onehot_encoded)
     # print(f"Shape of onehot encoded = {onehot_encoded.shape}")
     return onehot_encoded
-
 
 def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6,6], estimates=[4,2,3,4], prev_truths=[5, 4, 2, 3]):
     # given length of trial, number of nodes, previous estimates, generate a feature vector for student and teacher
@@ -595,6 +595,7 @@ def plot_perf(perf, tag):
 
 if __name__=='__main__':
     tag = "het_type_2ss"
+    print("T = ", T)
     print(f"Length of BB trial for T-SRCs = {srcs_l}\nLength of trial for 2SS = {l}")	
     print(f"num slots for T-SRCs = {T*(srcs_l + num_lof*ID_bits)} slots")
     num_slot = T//2 if T%2==0 else (T-1)//2	
