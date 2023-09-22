@@ -520,12 +520,12 @@ if __name__=="__main__":
     fname = f"./data/{ctag}.csv"
     # if(os.path.isfile(fname)):
     #     os.remove(fname)
-    gen_training_data_teacher_run_sim(tag, seed=90)
-    teacher = train_teacher_offline(tag = tag, epochs = 500)
+    # gen_training_data_teacher_run_sim(tag, seed=90)
+    # teacher = train_teacher_offline(tag = tag, epochs = 500)
 
-    gen_training_data_student_run_sim(teacher, tag=tag, num_iters=num_iters, seed=38)
-    student = train_student_offline(teacher, tag=tag)
-
+    # gen_training_data_student_run_sim(teacher, tag=tag, num_iters=num_iters, seed=38)
+    # student = train_student_offline(teacher, tag=tag)
+    student = load_model("./models/student_homo_jumps_l100_j10_n10000")
     eval_arr = np.zeros((1, 3))
     for i in range(num_eval_runs):
         print(f"Run {i+1}/{num_eval_runs} \n")
