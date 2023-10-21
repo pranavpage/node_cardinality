@@ -282,6 +282,13 @@ def bit_pattern_to_onehot(bit_p: np.ndarray)->np.ndarray:
     # print(f"Shape of onehot encoded = {onehot_encoded.shape}")
     return onehot_encoded
 
+def bb_aware(n, prev_estimate, l=l):
+    # instead of conducting LoF, we feed previous estimate to BB 
+    p_participate = min(1, 1.6*l/prev_estimate)
+    trial_arr = sim_balls_and_bins(n, p_participate, l)
+    bb_aware_estimate = est_balls_and_bins(trial_arr, p_participate)
+    return bb_aware_estimate
+
 
 def gen_feature_vectors_for_slot(n_max, l=10, nodes=[6,6,6], estimates=[4,2,3], prev_truths=[5, 4, 2]):
     # given length of trial, number of nodes, previous estimates, generate a feature vector for student and teacher
@@ -337,7 +344,7 @@ def gen_training_data_teacher_run_sim(tag, num_iters = num_iters, l = l, T=T ,  
 def train_teacher_offline(tag, epochs = 500, T=T):
     ctag = f"train_teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     teacher_model_fname = f"./models/teacher_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
-    if(not os.path.isdir(f"{teacher_model_fname}/")):
+    if(not os.path.isdir(f"{teacher_model_fname}/") or True):
         fname = f"./data/{ctag}.csv"
         data = np.genfromtxt(fname, delimiter=',')
         np.random.shuffle(data)
@@ -367,11 +374,11 @@ def train_teacher_offline(tag, epochs = 500, T=T):
         plt.grid()
         # plt.ylim(0,1e-4)
         plt.yscale('log')
-        plt.title('Heterogenous nodes : Teacher loss')
-        plt.ylabel('loss')
-        plt.xlabel('epoch')
+        plt.title('Heterogeneous Network : Teacher Loss')
+        plt.ylabel('MSE Loss')
+        plt.xlabel('Epochs')
         plt.legend(['train', 'test'], loc='upper left')
-        # plt.savefig("./plots/train_het_test_teacher_1.png")
+        plt.savefig("./plots/train_het_test_teacher_1.png")
         # plt.show()
         plt.close()
         return teacher
@@ -447,7 +454,7 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
     ctag = f"train_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     student_model_fname = f"./models/student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
-    if((not os.path.isdir(f"{student_model_fname}/"))):
+    if((not os.path.isdir(f"{student_model_fname}/")) or True):
         data = np.genfromtxt(fname, delimiter=',')
         np.random.shuffle(data)
         split = 0.95
@@ -494,9 +501,9 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
         plt.grid()
         # plt.ylim(0,1e-4)
         plt.yscale('log')
-        plt.title('Heterogenous nodes : Student loss')
-        plt.ylabel('loss')
-        plt.xlabel('epoch')
+        plt.title('Heterogeneous Network : Student Loss')
+        plt.ylabel('MSE Loss')
+        plt.xlabel('Epochs')
         plt.legend(['train', 'test'], loc='upper left')
         plt.savefig("./plots/train_het_test_student_1.png")
         return distiller.student
@@ -510,7 +517,7 @@ def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  
     seeds = rng.integers(0, 100, T)
     print(f"Normalised jumps = {norm_jumps}")
     steps = get_steps(num_iters, l, T, n_max, n_min, norm_jumps, q, seeds)
-    perf = np.zeros((num_iters, T+2))
+    perf = np.zeros((num_iters, T+3))
     ctag = f"perf_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     if(os.path.isfile(fname)):
@@ -521,7 +528,9 @@ def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  
         srcs_estimates = np.array([srcs(nodes[b], l=srcs_l) for b in range(T)])/n_max
         if(not i):
             estimates = np.random.randint(n_min, n_max, T)
+            bb_aware_estimates = estimates
             prev_truths = np.random.randint(n_min, n_max, T)
+        bb_aware_estimates = np.array([bb_aware(nodes[b], l=bb_aware_l, prev_estimate=bb_aware_estimates[b]) for b in range(T)])/n_max
         fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
         predict_input = fv_student[:-T]
         predict_input = np.reshape(predict_input, (1, predict_input.shape[0]))
@@ -529,12 +538,14 @@ def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  
         prediction = student.predict(predict_input, verbose = -1)
         err = sum(((target - prediction[0])**2)/T)
         srcs_err = sum(((target - srcs_estimates)**2)/T)
+        bb_aware_err = sum(((target - bb_aware_estimates)**2)/T)
         estimates = prediction[0]*n_max
         prev_truths = target*n_max
-        print(f"i={i}/{num_iters}, est1={estimates[0]:.3f}, truth1={prev_truths[0]:.3f}, err={err:.3e}, srcs_err={srcs_err:.3e}", end="\r")
+        print(f"i={i}/{num_iters}, est1={estimates[0]:.1f}, truth1={prev_truths[0]:.1f}, err={err:.3e}, srcs_err={srcs_err:.3e}, bb_aware_err={bb_aware_err:.3e}", end="\r")
         perf[i,0] = err
         perf[i,1] = srcs_err
-        perf[i, 2:] = target
+        perf[i,2] = bb_aware_err
+        perf[i, 3:] = target
         perf_row = perf[i, :]
         with open(fname, 'a') as f:
             writer=csv.writer(f)
@@ -544,37 +555,38 @@ def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l, T=T ,  
 def plot_perf(perf, tag):
     nn_mean = np.mean(perf[:,0])
     srcs_mean = np.mean(perf[:,1])
+    bb_aware_mean = np.mean(perf[:,2])
     plt.plot(perf[:, 0], '-b',label = "NN")
     plt.plot(perf[:, 1], '--r',label = "T-SRCs")
-    plt.title(f"Het Nodes student performance (MSE) \n Avg NN MSE = {np.mean(perf[:,0]):.3e}, Avg T-SRCs MSE = {np.mean(perf[:,1]):.3e}")
-    plt.xlabel("slots")
-    plt.ylabel("error")
-    plt.grid()
+    plt.plot(perf[:, 2], '-.c',label = "T-BB-Aware", alpha = 0.6)
+    plt.title(f"Performance (MSE) of Different Algorithms in a Heterogeneous Network \n Avg NN MSE = {np.mean(perf[:,0]):.3e}, \n Avg T-SRCs MSE = {np.mean(perf[:,1]):.3e}, Avg T-BB-Aware MSE = {bb_aware_mean:.3e}")
+    plt.xlabel("Time Frames")
+    plt.ylabel("Mean Squared Error (normalised)")
+    plt.grid(True)
     plt.legend()
     plt.yscale('log')
     plt.savefig(f"./plots/{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}.png")
     plt.close()
-    return np.array([nn_mean, srcs_mean]).reshape((1,2))
+    return np.array([nn_mean, srcs_mean, bb_aware_mean]).reshape((1,3))
 
 if __name__=='__main__':
-    tag = "het_test"
     print(f"Length of BB trial for T-SRCs = {srcs_l}\nLength of trial for 3SS = {l}")
     print(f"num slots for T-SRCs = {T*(srcs_l + num_lof*ID_bits)} slots")
     print(f"num slots for 3SS    = {(T-1)*l} slots")
     gen_training_data_teacher_run_sim(tag = tag, num_iters=num_iters)
     teacher = train_teacher_offline(tag = tag, epochs = 400)
     
-    gen_training_data_student_run_sim(teacher,tag = tag, num_iters=num_iters, seed=90)
+    gen_training_data_student_run_sim(teacher,tag = tag, num_iters=num_iters, seed=121)
     student = train_student_offline(teacher, tag=tag, epochs = 100)
     
     # perf = np.genfromtxt("./data/perf_student_het_test_l30_T3_j5_n1000.csv", delimiter=",")
-    eval_arr = np.zeros((1, 2))
+    eval_arr = np.zeros((1, 3))
     for i in range(num_eval_runs):
         print(f"Run {i+1}/{num_eval_runs} \n")
         perf = evaluate_student_run_sim(student,tag = tag, num_iters=num_eval_iters, seed=i)
         res = plot_perf(perf, tag=f"{tag}_s{i}")
         eval_arr = np.append(eval_arr, res, axis=0)
-    eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "SRCs_mean"])
+    eval_df = pd.DataFrame(eval_arr, columns=["NN_mean", "SRCs_mean", "BB_Aware_mean"])
     eval_df.drop(0, inplace=True)
     eval_df.to_csv(f"./data/eval_student_{tag}_l{int(l)}_T{T}_j{jumps}_n{num_iters}.csv", index=False)
         

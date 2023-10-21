@@ -1,5 +1,6 @@
+tag = "het_test"
 num_iters = 10000 
-l = 125
+l = 100
 T = 3
 # n_max = int((2**6)*3/T)
 n_max = int((2**6)*3/T)
@@ -13,7 +14,8 @@ student_len = (T-1)*l*4 + T
 teacher_len = (T)*l + T 
 num_lof = 3
 ID_bits = 8
-num_eval_runs = 10
+num_eval_runs = 20
 num_eval_iters = 2000
 alpha=0.1
 srcs_l = int((T-1)*l*1.0/T - num_lof*ID_bits)
+bb_aware_l = int((T-1)*l/T)

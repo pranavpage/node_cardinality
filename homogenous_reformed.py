@@ -399,7 +399,7 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
     ctag = f"train_student_{tag}_l{int(l)}_j{jumps}_n{num_iters}"
     fname = f"./data/{ctag}.csv"
     student_model_fname = f"./models/student_{tag}_l{int(l)}_j{jumps}_n{num_iters}"
-    if((not os.path.isdir(f"{student_model_fname}/"))):
+    if((not os.path.isdir(f"{student_model_fname}/")) or True):
         data = np.genfromtxt(fname, delimiter=',')
         np.random.shuffle(data)
         split = 0.95
@@ -446,11 +446,11 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
         plt.grid()
         # plt.ylim(0,1e-4)
         plt.yscale('log')
-        plt.title('Homogenous nodes : Student loss')
-        plt.ylabel('loss')
-        plt.xlabel('epoch')
-        plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig("./plots/train_homo_test_student_1.png")
+        plt.title('Homogeneous Network : Student Loss')
+        plt.ylabel('Mean Squared Error (normalised)')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.savefig("./plots/train_homo_test_student.png")
         return distiller.student
     else:
         print(f"Trained student model exists \n")
@@ -472,8 +472,9 @@ def evaluate_student_run_sim(student, tag, num_iters = num_iters, l = l,  n_max 
         srcs_estimates = srcs(nodes, l=srcs_l, num_lof=num_lof)/n_max
         if(not i):
             estimates = np.random.randint(n_min, n_max, 1)
+            bb_aware_estimates = estimates
             prev_truths = np.random.randint(n_min, n_max, 1)
-        bb_aware_estimates = bb_aware(nodes, estimates, l=l)/n_max
+        bb_aware_estimates = bb_aware(nodes, bb_aware_estimates, l=l)/n_max
         fv_student, fv_teacher = gen_feature_vectors_for_slot(n_max, l, nodes, estimates, prev_truths)
         predict_input = fv_student[:-1]
         predict_input = np.reshape(predict_input, (1, predict_input.shape[0]))
@@ -501,10 +502,10 @@ def plot_perf(perf, tag):
     bb_aware_mean = np.mean(perf[:,2])
     plt.plot(perf[:, 0], '-b',label = "NN")
     plt.plot(perf[:, 1], '--r',label = "SRCs", alpha = 0.7)
-    plt.plot(perf[:, 1], '-.c',label = "BB-Aware", alpha = 0.6)
-    plt.title(f"Homo Nodes student performance (MSE) \n Avg NN MSE = {np.mean(perf[:,0]):.3e} \n Avg SRCs MSE = {np.mean(perf[:,1]):.3e}, Avg BB-Aware MSE = {np.mean(perf[:,2]):.3e}")
-    plt.xlabel("slots")
-    plt.ylabel("error")
+    plt.plot(perf[:, 2], '-.c',label = "BB-Aware", alpha = 0.6)
+    plt.title(f"Performance (MSE) of Different Algorithms in a Homogeneous Network\n Avg NN MSE = {np.mean(perf[:,0]):.3e} \n Avg SRCs MSE = {np.mean(perf[:,1]):.3e}, Avg BB-Aware MSE = {np.mean(perf[:,2]):.3e}")
+    plt.xlabel("Time Frames")
+    plt.ylabel("Mean Squared Error (normalised)")
     plt.grid()
     plt.legend()
     plt.yscale('log')
@@ -516,16 +517,16 @@ def plot_perf(perf, tag):
 
 if __name__=="__main__":
     # fv_student, fv_teacher = gen_feature_vectors_for_slot(100)
-    ctag = f"train_teacher_{tag}_l{int(l)}_j{jumps}_n{num_iters}"
-    fname = f"./data/{ctag}.csv"
+    # ctag = f"train_teacher_{tag}_l{int(l)}_j{jumps}_n{num_iters}"
+    # fname = f"./data/{ctag}.csv"
     # if(os.path.isfile(fname)):
     #     os.remove(fname)
-    # gen_training_data_teacher_run_sim(tag, seed=90)
-    # teacher = train_teacher_offline(tag = tag, epochs = 500)
+    gen_training_data_teacher_run_sim(tag, seed=90)
+    teacher = train_teacher_offline(tag = tag, epochs = 500)
 
-    # gen_training_data_student_run_sim(teacher, tag=tag, num_iters=num_iters, seed=38)
-    # student = train_student_offline(teacher, tag=tag)
-    student = load_model("./models/student_homo_jumps_l100_j10_n10000")
+    gen_training_data_student_run_sim(teacher, tag=tag, num_iters=num_iters, seed=38)
+    student = train_student_offline(teacher, tag=tag)
+    # student = load_model("./models/student_homo_jumps_l100_j10_n10000")
     eval_arr = np.zeros((1, 3))
     for i in range(num_eval_runs):
         print(f"Run {i+1}/{num_eval_runs} \n")
