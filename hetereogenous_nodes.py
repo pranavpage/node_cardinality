@@ -377,7 +377,7 @@ def train_teacher_offline(tag, epochs = 500, T=T):
         plt.title('Heterogeneous Network : Teacher Loss')
         plt.ylabel('MSE Loss')
         plt.xlabel('Epochs')
-        plt.legend(['train', 'test'], loc='upper left')
+        plt.legend(['Train', 'Test'], loc='upper left')
         plt.savefig("./plots/train_het_test_teacher_1.png")
         # plt.show()
         plt.close()
@@ -504,7 +504,7 @@ def train_student_offline(teacher,tag, alpha=alpha, test_train_split=0.9, epochs
         plt.title('Heterogeneous Network : Student Loss')
         plt.ylabel('MSE Loss')
         plt.xlabel('Epochs')
-        plt.legend(['train', 'test'], loc='upper left')
+        plt.legend(['Train', 'Test'], loc='upper left')
         plt.savefig("./plots/train_het_test_student_1.png")
         return distiller.student
     else:
